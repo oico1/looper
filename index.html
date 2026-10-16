@@ -207,10 +207,15 @@ canvas{width:100%;display:block;border-radius:10px;background:var(--panel2)}
       <div class="panel">
         <h2>Latency</h2>
         <div class="row"><span class="num" style="font-size:34px;font-weight:600" id="latTxt">0 ms</span><span class="help" id="latProfile"></span></div>
-        <input type="range" id="latRange" min="0" max="400" step="1" value="0" aria-label="Latency in milliseconds">
-        <div class="row"><button id="latMinus" class="grow">−1 ms</button><button id="latPlus" class="grow">+1 ms</button></div>
-        <button class="primary" id="calBtn">Auto-calibrate</button>
-        <p class="help">Unplug headphones, turn the phone volume up and keep the room quiet. The app plays six clicks and measures how late the microphone hears them. The value is saved for the current input device.</p>
+        <div class="field"><span class="lbl">I'm listening through</span>
+          <div class="seg" id="outSeg"><button data-out="wired">Speaker or wired</button><button data-out="bt">Bluetooth</button></div>
+          <p class="help">Each keeps its own latency, so you can switch without recalibrating.</p></div>
+        <input type="range" id="latRange" min="0" max="800" step="1" value="0" aria-label="Latency in milliseconds">
+        <div class="row"><button id="latMinus" class="grow">−5 ms</button><button id="latPlus" class="grow">+5 ms</button></div>
+        <button class="primary" id="playCalBtn">Calibrate by playing along</button>
+        <p class="help">Works with any headphones, including Bluetooth. Put them on and you'll hear 4 count-in clicks, then 8 more: strum muted strings (or clap) right on each of those 8 clicks, the way you'd play in time. The app measures how late your strums reach it, which is exactly the delay it needs to correct.</p>
+        <button id="calBtn">Auto-calibrate with the speaker</button>
+        <p class="help">For the speaker or wired headphones only: unplug headphones, turn the volume up and stay quiet. The app plays six clicks and measures how late the microphone hears them.</p>
         <p class="help" id="calInfo"></p>
         <p class="help" id="outLat"></p>
       </div>
@@ -533,7 +538,7 @@ async function ensureMic() {
   monGain = ctx.createGain(); monGain.gain.value = CFG.monitor ? 1 : 0; inGain.connect(monGain); monGain.connect(master);
   const tr = stream.getAudioTracks()[0];
   CFG.device = (tr && tr.label) || 'Default input';
-  if (CFG.profiles[CFG.device] != null) CFG.latencyMs = CFG.profiles[CFG.device];
+  if (CFG.profiles[profKey()] != null) CFG.latencyMs = CFG.profiles[profKey()];
   saveCfg(); listInputs(); renderSettings();
   return true;
 }
@@ -742,6 +747,7 @@ async function loadRhythmFile(file) {
 
 /* ---------- latency calibration ---------- */
 async function calibrate() {
+  if (CFG.outMode === 'bt') setOutMode('wired');   // speaker method can't hear Bluetooth headphones
   if (!(await ensureMic())) return;
   if (S.playing) stop();
   const sr = ctx.sampleRate, N = 6, gap = 0.6, pre = 0.3, t0 = ctx.currentTime + 0.5;
@@ -770,10 +776,60 @@ async function calibrate() {
     $('calInfo').textContent = `Measured ${Math.round(med * 1000)} ms from ${delays.length} clicks` + (spread > 15 ? ` (spread ${Math.round(spread)} ms, run it again in a quieter spot)` : '.');
   });
 }
+const profKey = () => (CFG.device || 'Default input') + (CFG.outMode === 'bt' ? ' + Bluetooth' : '');
 function setLatency(ms) {
-  CFG.latencyMs = clamp(Math.round(ms), 0, 400);
-  CFG.profiles[CFG.device || 'Default input'] = CFG.latencyMs;
+  CFG.latencyMs = clamp(Math.round(ms), 0, 1000);
+  CFG.profiles[profKey()] = CFG.latencyMs;
   saveCfg(); renderSettings();
+}
+function setOutMode(m) {
+  CFG.outMode = m; const v = CFG.profiles[profKey()];
+  if (v != null) CFG.latencyMs = v;
+  saveCfg(); renderSettings();
+  if (v == null) $('calInfo').textContent = m === 'bt' ? 'No Bluetooth calibration yet. Put the headphones on and use "Calibrate by playing along".' : '';
+}
+// Play-along calibration: clicks at 60 BPM through whatever the phone outputs to; the player
+// strums on each one. Strum onset minus click time = output delay + input delay, as heard.
+let playCalBusy = false;
+async function calibratePlayAlong() {
+  if (playCalBusy) return;
+  if (!(await ensureMic())) return;
+  if (S.playing) stop(); stopPreview();
+  playCalBusy = true;
+  const sr = ctx.sampleRate, beat = 1.0, COUNT = 4, N = 8, pre = 0.4, t0 = ctx.currentTime + 0.6;
+  for (let i = 0; i < COUNT + N; i++) click(ctx, t0 + i * beat, i < COUNT ? (i === 0 ? 0 : 2) : 1, master, i < COUNT ? 'click' : 'wood');
+  const info = $('calInfo'), btn = $('playCalBtn');
+  btn.textContent = 'Listening…';
+  const tick = setInterval(() => {
+    const k = Math.floor(ctx.currentTime - t0);   // which click we're on, roughly (you hear it later)
+    info.textContent = k < 0 ? 'Get ready…' : k < COUNT ? `Count-in: ${COUNT - k}… (don't play yet)` : k < COUNT + N ? `Strum on each click: ${k - COUNT + 1} of ${N}` : 'Measuring…';
+  }, 100);
+  const startFrame = Math.round((t0 + COUNT * beat - pre) * sr), len = Math.round((pre + N * beat + 0.9) * sr);
+  capture(startFrame, len, x => {
+    clearInterval(tick); playCalBusy = false; btn.textContent = 'Calibrate by playing along';
+    // 5 ms RMS envelope
+    const hop = Math.round(sr * 0.005), env = new Float32Array(Math.floor(x.length / hop));
+    for (let f = 0; f < env.length; f++) { let s2 = 0; for (let i = f * hop; i < (f + 1) * hop; i++) s2 += x[i] * x[i]; env[f] = Math.sqrt(s2 / hop); }
+    let noise = 0, nf = Math.round(pre * 0.6 / 0.005); for (let f = 0; f < nf; f++) noise += env[f]; noise = noise / nf + 1e-5;
+    let pk = 0; for (const v of env) pk = Math.max(pk, v);
+    const th = Math.max(noise * 5, pk * 0.25), onsets = [];
+    let below = 99;
+    for (let f = 0; f < env.length; f++) {
+      if (env[f] > th && below >= 16) onsets.push(f * hop / sr);
+      below = env[f] > th * 0.6 ? 0 : below + 1;
+    }
+    // assign the first onset after each click (allowing −150 ms early … +850 ms late)
+    const delays = [];
+    for (let k = 0; k < N; k++) {
+      const c = pre + k * beat, o = onsets.find(t => t >= c - 0.15 && t < c + 0.85);
+      if (o != null) delays.push(o - c);
+    }
+    if (delays.length < 5 || pk < noise * 4) { info.textContent = `Only caught ${delays.length} of ${N} strums. Strum a bit harder, right on the clicks, and try again.`; return; }
+    delays.sort((a, b) => a - b);
+    const med = delays[Math.floor(delays.length / 2)], mad = median(delays.map(d => Math.abs(d - med)));
+    setLatency(Math.max(0, Math.round(med * 1000)));
+    info.textContent = `Measured ${Math.round(med * 1000)} ms from ${delays.length} strums` + (mad > 0.03 ? ` (they varied by about ${Math.round(mad * 1000)} ms; run it again for a steadier value).` : '. Saved for ' + (CFG.outMode === 'bt' ? 'Bluetooth.' : 'speaker / wired.'));
+  });
 }
 
 /* ---------- transcription ---------- */
@@ -1543,14 +1599,15 @@ function renderSettings() {
   $('micBtn').classList.toggle('on', !!capNode);
   $('latTxt').textContent = CFG.latencyMs + ' ms';
   $('latRange').value = CFG.latencyMs;
-  $('latProfile').textContent = CFG.device ? 'for ' + CFG.device : '';
+  $('latProfile').textContent = (CFG.outMode === 'bt' ? 'Bluetooth' : 'Speaker or wired') + (CFG.device ? ' · ' + CFG.device : '');
+  $('outSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.out === (CFG.outMode || 'wired')));
   $('monChk').checked = !!CFG.monitor;
   $('gainRange').value = CFG.inputGainDb;
   $('gainTxt').textContent = (CFG.inputGainDb > 0 ? '+' : '') + CFG.inputGainDb + ' dB';
   $('tuneSel').value = CFG.tuning;
   if (ctx) {
     const ol = Math.round(((ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * 1000);
-    $('outLat').innerHTML = `Output delay reported by the phone: ${ol} ms.` + (ol > 120 ? ' <span class="warn">That is high. Bluetooth headphones make overdubs land late; use wired headphones.</span>' : '');
+    $('outLat').innerHTML = `Output delay reported by the phone: ${ol} ms.` + (ol > 120 && CFG.outMode !== 'bt' ? ' <span class="warn">That is high, which usually means Bluetooth. Select Bluetooth above and calibrate by playing along.</span>' : '');
   }
 }
 
@@ -1599,9 +1656,11 @@ $('inSel').onchange = async e => { CFG.inputId = e.target.value; saveCfg(); clos
 $('gainRange').oninput = e => { CFG.inputGainDb = +e.target.value; saveCfg(); if (inGain) inGain.gain.setTargetAtTime(dbToLin(CFG.inputGainDb), ctx.currentTime, 0.02); renderSettings(); };
 $('monChk').onchange = e => { CFG.monitor = e.target.checked; saveCfg(); if (monGain) monGain.gain.value = CFG.monitor ? 1 : 0; };
 $('latRange').oninput = e => setLatency(+e.target.value);
-$('latMinus').onclick = () => setLatency(CFG.latencyMs - 1);
-$('latPlus').onclick = () => setLatency(CFG.latencyMs + 1);
+$('latMinus').onclick = () => setLatency(CFG.latencyMs - 5);
+$('latPlus').onclick = () => setLatency(CFG.latencyMs + 5);
 $('calBtn').onclick = calibrate;
+$('playCalBtn').onclick = calibratePlayAlong;
+$('outSeg').onclick = e => { const b = e.target.closest('button'); if (b) setOutMode(b.dataset.out); };
 $('tuneSel').onchange = e => { CFG.tuning = e.target.value; saveCfg(); };
 let newConfirm = 0;
 $('newSess').onclick = () => {
