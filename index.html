@@ -763,7 +763,8 @@ async function loadRhythmFile(file) {
     const det = detectBpm(buf);
     Object.assign(S.rhythm, { source: 'file', fileName: file.name, detected: det, fileBpm: det.bpm, offset: Math.round(det.offset * 1000) / 1000 });
     buildPeaks(); defaultRegion();
-    if (!hasLoops()) S.bpm = Math.round(det.bpm);
+    if (!hasLoops()) S.bpm = S.rhythm.fileBpm;
+    else toast(`Your loops are at ${S.bpm} BPM, so the file plays at that tempo. Details in the rhythm menu.`, 5000);
     restartRhythm(); renderAll(); markDirty();
     openSheet('rhythm');
   } catch (e) { toast('Could not read that audio file.'); }
@@ -921,7 +922,18 @@ function detectNotes(data, sr, minMs) {
   }
   if (cur) close(frames);
   const fs = hop / srd, shift = W / 2 / srd;
-  return notes.map(o => ({ midi: Math.round(median(o.ps)), t0: o.start * fs + shift, t1: o.end * fs + shift }))
+  // The pitch tracker locks on 20-60 ms after the pick attack. Snap each start back to the
+  // attack itself: the biggest jump in a bright (first-difference) envelope just before it.
+  const ah = Math.round(srd * 0.002), an = Math.floor(n / ah), aenv = new Float32Array(an);
+  for (let f = 0; f < an; f++) { let s2 = 0; for (let i = Math.max(1, f * ah); i < (f + 1) * ah; i++) { const d = x[i] - x[i - 1]; s2 += d * d; } aenv[f] = Math.sqrt(s2 / ah); }
+  const attackNear = t => {
+    const A = f => aenv[mod(f, an)];   // the loop wraps, so look across its end too
+    const fc = Math.round(t * srd / ah), f0 = fc - Math.round(0.09 * srd / ah), f1 = Math.min(an, fc + Math.round(0.015 * srd / ah));
+    let best = null, br = 1.8;
+    for (let f = f0; f < f1; f++) { const r = A(f) / ((A(f - 3) + A(f - 4) + A(f - 5)) / 3 + 1e-6); if (r > br) { br = r; best = f; } }
+    return best === null ? t : Math.max(0, best * ah / srd);
+  };
+  return notes.map(o => { const t0 = o.start * fs + shift; return { midi: Math.round(median(o.ps)), t0: attackNear(t0), t1: o.end * fs + shift }; })
     .filter(o => (o.t1 - o.t0) * 1000 >= minMs);
 }
 function quantize(raw, bars, unit) {
@@ -1311,7 +1323,7 @@ function bindSheetInputs() {
   on('shChain', 'change', e => { S.chain = e.target.checked; markDirty(); });
   on('shSound', 'change', e => { S.rhythm.sound = e.target.value; renderRhythm(); markDirty(); });
   on('shRvol', 'input', e => { S.rhythm.vol = +e.target.value; applyGains(); markDirty(); });
-  on('shFbpm', 'change', e => { const ls = rhythmRaw ? rhythmLoop().ls : 0; S.rhythm.fileBpm = clamp(+e.target.value || 120, 30, 300); if (rhythmRaw) alignStartTo(ls); rChanged(); });
+  on('shFbpm', 'change', e => { const ls = rhythmRaw ? rhythmLoop().ls : 0; S.rhythm.fileBpm = clamp(+e.target.value || 120, 30, 300); if (rhythmRaw) alignStartTo(ls); followFileTempo(); rChanged(); });
   if ($('rwOver')) bindWaveEditor();
   on('rwClick', 'change', e => { S.rhythm.prevClick = e.target.checked; markDirty(); });
   const t = S.tracks.find(x => x.id === sheetId);
@@ -1339,9 +1351,13 @@ function sheetAction(act) {
   if (act === 'bpm+') return setBpm(S.bpm + 1);
   if (act === 'tap') return tap();
   if (act === 'src-metro') { stopPreview(); r.source = 'metro'; stopRhythmFile(); renderRhythm(); markDirty(); return openSheet('rhythm'); }
-  if (act === 'src-file') { r.source = 'file'; if (rhythmRaw && ctx && !rhythmBuf) buildRhythmBuffer(); restartRhythm(); renderRhythm(); markDirty(); return openSheet('rhythm'); }
+  if (act === 'src-file') { r.source = 'file'; followFileTempo(); if (rhythmRaw && ctx && !rhythmBuf) buildRhythmBuffer(); restartRhythm(); renderRhythm(); markDirty(); return openSheet('rhythm'); }
   if (act === 'pick') return $('fileIn').click();
-  if (act === 'fb/' || act === 'fb*') { const ls = rhythmLoop().ls; r.fileBpm = Math.round(clamp(act === 'fb/' ? r.fileBpm / 2 : r.fileBpm * 2, 30, 300) * 10) / 10; alignStartTo(ls); return rChanged(); }
+  if (act === 'fb/' || act === 'fb*') { const ls = rhythmLoop().ls; r.fileBpm = Math.round(clamp(act === 'fb/' ? r.fileBpm / 2 : r.fileBpm * 2, 30, 300) * 10) / 10; alignStartTo(ls); followFileTempo(); return rChanged(); }
+  if (act === 'usefile') {
+    if (hasLoops()) { toast(`Your loops were recorded at ${S.bpm} BPM. Delete them first, then tap this again.`, 5000); return; }
+    S.bpm = r.fileBpm; restartIfPlaying(); renderTop(); renderRhythm(); markDirty(); return updRhythmSheet();
+  }
   if (act === 'off-' || act === 'off+') { alignStartTo(rhythmLoop().ls + (act === 'off+' ? 0.005 : -0.005)); return rChanged(); }
   if (act === 'beat-' || act === 'beat+') { alignStartTo(rhythmLoop().ls + (act === 'beat+' ? 1 : -1) * rGrid().beatF); return rChanged(); }
   if (act === 'sb-' || act === 'sb+') { r.startBar += act === 'sb+' ? 1 : -1; rClamp(); return rChanged(); }
@@ -1398,6 +1414,7 @@ function updPreviewBtn() {
   const b = $('rwPlay'); if (!b) return;
   b.innerHTML = preview ? `<span style="display:inline-flex;gap:8px;align-items:center">${IC.stop} Stop listening</span>` : `<span style="display:inline-flex;gap:8px;align-items:center">${IC.play} Listen to the selected bars</span>`;
 }
+function followFileTempo() { if (S.rhythm.source === 'file' && rhythmRaw && !hasLoops() && S.bpm !== S.rhythm.fileBpm) { S.bpm = S.rhythm.fileBpm; restartIfPlaying(); renderTop(); } }
 function rChanged() { restartRhythm(); renderRhythm(); markDirty(); updRhythmSheet(); if (preview) startPreview(); }
 function fmtT(t) { const m = Math.floor(t / 60), s = t - m * 60; return m ? `${m}:${s.toFixed(1).padStart(4, '0')}` : `${s.toFixed(2)} s`; }
 function updRhythmSheet() {
@@ -1406,7 +1423,9 @@ function updRhythmSheet() {
   $('rwStart').textContent = r.startBar + 1; $('rwLen').textContent = r.loopBars;
   $('rwDur').textContent = fmtT(rDur()) + ' · ' + rMaxBars() + ' bars';
   $('rwInfo').textContent = `Looping bars ${r.startBar + 1}–${r.startBar + r.loopBars}: ${fmtT(ls)} to ${fmtT(le)}`;
-  $('rwRate').textContent = `At ${S.bpm} BPM the file plays at ${rate.toFixed(2)}× speed (change it with the BPM in the top bar). The pitch moves with the speed in this version.`;
+  const same = Math.abs(rate - 1) < 0.001;
+  $('rwRate').innerHTML = same ? `Playing at the file's own tempo, ${S.bpm} BPM. Scores export at this tempo.`
+    : `<span class="warn">The session runs at ${S.bpm} BPM, so the file plays at ${rate.toFixed(2)}× speed (and lower or higher pitch). Loops and scores use ${S.bpm} BPM.</span> <button data-act="usefile" style="margin-top:8px;width:100%">Play at the file's tempo (${r.fileBpm} BPM)</button>${hasLoops() ? '<br>Your loops lock the tempo; delete them first.' : ''}`;
   const fb = $('shFbpm'); if (fb && document.activeElement !== fb) fb.value = r.fileBpm;
   updPreviewBtn(); drawOverview(); drawDetail();
 }
