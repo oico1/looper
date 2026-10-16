@@ -377,6 +377,7 @@ function inCountIn(t) {
   return false;
 }
 function sched() {
+  if (rec && !rec.headDone && ctx.currentTime > rec.end - 0.3) prepareHead(rec);
   const ahead = ctx.currentTime + 0.15;
   for (;;) {
     const t = S.origin + nextBeat * spb();
@@ -485,7 +486,7 @@ function stop() {
   clearInterval(schedTimer);
   stopRhythmFile();
   S.tracks.forEach(stopTrackSource);
-  if (rec) { captures.delete(rec.cap); rec = null; }
+  if (rec) { captures.delete(rec.cap); if (rec.head) try { rec.head.stop(); } catch (e) {} rec = null; }
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   renderTop(); renderTracks();
 }
@@ -644,6 +645,24 @@ function stopTakeEarly(r) {
   else setTimeout(() => finalize(r.cap), 1500);   // safety if the input stalls
   if (cut < r.len - sr * 0.05) toast('Stopped. The rest of the loop stays silent.');
 }
+// Shortly before a take ends, play the part already captured from the loop's next downbeat.
+// The tail (the last 'latency' worth of audio) is still in flight; finishTake swaps in the
+// complete loop at the same position as soon as it lands, so the repeat starts on time.
+function prepareHead(r) {
+  r.headDone = true;
+  const cap = r.cap, sr = ctx.sampleRate, last = ring[ring.length - 1];
+  if (!last || cap.done || cap.cutAt != null) return;
+  const avail = Math.min(r.len, last.f + last.d.length - cap.startFrame - 256);
+  if (avail < sr * 0.25) return;
+  const head = new Float32Array(avail);
+  for (const c of cap.chunks) { const o = c.f - cap.startFrame; for (let i = 0; i < c.d.length; i++) { const k = o + i; if (k >= 0 && k < avail) head[k] = c.d[i]; } }
+  attachTrack(r.tr);
+  const ab = ctx.createBuffer(1, avail, sr); ab.copyToChannel(head, 0);
+  const s = ctx.createBufferSource(); s.buffer = ab; s.connect(r.tr.gain);
+  s.start(r.end);
+  if (!r.overdub && r.tr.src) { try { r.tr.src.stop(r.end); } catch (e) {} }   // a replaced take stops on the downbeat
+  r.head = s;
+}
 function finishTake(r, buf) {
   if (rec !== r) return;
   const tr = r.tr, sr = ctx.sampleRate;
@@ -659,7 +678,12 @@ function finishTake(r, buf) {
     tr.anchor = Math.round((r.start - S.origin) / barSec());
   }
   tr.sr = sr; tr.notes = null; tr.lastTake = Date.now(); tr.lastAct = 'take';
-  if (S.playing) startTrackSource(tr, ctx.currentTime + 0.03);
+  if (S.playing) {
+    // Hand over from the head preview (if any) to the full loop at the same position, no gap.
+    const T = ctx.currentTime + 0.06;
+    startTrackSource(tr, T);
+    if (r.head) { try { r.head.stop(T); } catch (e) {} }
+  }
   rec = null;
   if (r.next && !r.next.data && S.playing) beginTake(r.next, r.nextStart);
   renderAll(); markDirty();
@@ -673,7 +697,7 @@ function undoTrack(tr) {
   toast(tr.lastAct === 'delete' ? 'Loop restored' : 'Last take undone'); tr.lastAct = 'take'; renderAll(); markDirty();
 }
 function clearTrack(tr) {
-  if (rec && rec.tr === tr) { captures.delete(rec.cap); rec = null; }
+  if (rec && rec.tr === tr) { captures.delete(rec.cap); if (rec.head) try { rec.head.stop(); } catch (e) {} rec = null; }
   if (tr.data) { tr.undo.push({ data: tr.data, anchor: tr.anchor }); if (tr.undo.length > 6) tr.undo.shift(); tr.lastTake = Date.now(); tr.lastAct = 'delete'; setTimeout(renderTracks, 8200); }
   stopTrackSource(tr); tr.data = null; tr.notes = null; tr.solo = false;
   applyGains(); renderAll(); markDirty();
@@ -807,24 +831,31 @@ async function calibratePlayAlong() {
   const startFrame = Math.round((t0 + COUNT * beat - pre) * sr), len = Math.round((pre + N * beat + 0.9) * sr);
   capture(startFrame, len, x => {
     clearInterval(tick); playCalBusy = false; btn.textContent = 'Calibrate by playing along';
-    // 5 ms RMS envelope
+    // Attack detector that works while strings keep ringing: envelope of the first
+    // difference (emphasises the bright pick/strum transient), then for each click the
+    // frame with the biggest jump over the preceding 15-25 ms.
     const hop = Math.round(sr * 0.005), env = new Float32Array(Math.floor(x.length / hop));
-    for (let f = 0; f < env.length; f++) { let s2 = 0; for (let i = f * hop; i < (f + 1) * hop; i++) s2 += x[i] * x[i]; env[f] = Math.sqrt(s2 / hop); }
-    let noise = 0, nf = Math.round(pre * 0.6 / 0.005); for (let f = 0; f < nf; f++) noise += env[f]; noise = noise / nf + 1e-5;
+    for (let f = 0; f < env.length; f++) { let s2 = 0; for (let i = Math.max(1, f * hop); i < (f + 1) * hop; i++) { const d = x[i] - x[i - 1]; s2 += d * d; } env[f] = Math.sqrt(s2 / hop); }
+    let noise = 0, nf = Math.round(pre * 0.6 / 0.005); for (let f = 0; f < nf; f++) noise += env[f]; noise = noise / nf + 1e-6;
     let pk = 0; for (const v of env) pk = Math.max(pk, v);
-    const th = Math.max(noise * 5, pk * 0.25), onsets = [];
-    let below = 99;
-    for (let f = 0; f < env.length; f++) {
-      if (env[f] > th && below >= 16) onsets.push(f * hop / sr);
-      below = env[f] > th * 0.6 ? 0 : below + 1;
-    }
-    // assign the first onset after each click (allowing −150 ms early … +850 ms late)
-    const delays = [];
+    const delays = [], strengths = [];
     for (let k = 0; k < N; k++) {
-      const c = pre + k * beat, o = onsets.find(t => t >= c - 0.15 && t < c + 0.85);
-      if (o != null) delays.push(o - c);
+      const c = pre + k * beat, f0 = Math.max(6, Math.round((c - 0.15) / 0.005)), f1 = Math.min(env.length, Math.round((c + 0.85) / 0.005));
+      let best = -1, bestR = 0;
+      for (let f = f0; f < f1; f++) {
+        const before = (env[f - 3] + env[f - 4] + env[f - 5]) / 3 + noise;
+        const r = env[f] / before;
+        if (r > bestR && env[f] > noise * 3) { bestR = r; best = f; }
+      }
+      strengths.push(Math.round(bestR * 10) / 10);
+      if (best >= 0 && bestR > 2.5) {
+        let f = best; while (f > f0 && env[f - 1] > env[best] * 0.5 && env[f - 1] / ((env[f - 4] + env[f - 5] + env[f - 6]) / 3 + noise) > 1.5) f--;   // walk back to where the attack begins
+        delays.push(f * 0.005 - c);
+      }
     }
-    if (delays.length < 5 || pk < noise * 4) { info.textContent = `Only caught ${delays.length} of ${N} strums. Strum a bit harder, right on the clicks, and try again.`; return; }
+    // a steady player gives near-identical delays: drop strays more than 60 ms from the median
+    if (delays.length >= 3) { const m0 = median(delays); for (let i = delays.length - 1; i >= 0; i--) if (Math.abs(delays[i] - m0) > 0.06) delays.splice(i, 1); }
+    if (delays.length < 5) { info.textContent = pk < noise * 4 ? 'The microphone heard almost nothing. Check the level meter above moves when you play, and that the input device is the phone mic, not the headphones.' : `Only ${delays.length} of ${N} strums lined up with the clicks. Try a short, crisp strum on muted strings (or tap the guitar body) right on each click.`; return; }
     delays.sort((a, b) => a - b);
     const med = delays[Math.floor(delays.length / 2)], mad = median(delays.map(d => Math.abs(d - med)));
     setLatency(Math.max(0, Math.round(med * 1000)));
