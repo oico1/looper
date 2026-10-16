@@ -1,0 +1,1617 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#161513">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Guitar Looper</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=Barlow:wght@400;500&display=swap">
+<style>
+/* Layout: one-column stompbox board — transport strip on top, loop "pedals" stacked, bottom tab bar */
+:root{
+  --bg:#161513; --panel:#211f1b; --panel2:#2c2924; --line:#3b372f; --fg:#efe8dc; --muted:#a59c8d;
+  --amber:#f2a93b; --amber-bg:#3a2c14; --red:#f0564a; --red-bg:#3d1c18; --green:#62d08f; --green-bg:#16301f;
+  --display:"Barlow Condensed","Roboto Condensed","Arial Narrow",sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#f2eee6; --panel:#fffcf6; --panel2:#ebe5d9; --line:#d6cdbd; --fg:#1d1a15; --muted:#6b6254;
+  --amber:#a86400; --amber-bg:#f8e7c8; --red:#c42a1e; --red-bg:#f8dcd7; --green:#1b844a; --green-bg:#d6efdf; color-scheme:light}}
+:root[data-theme="light"]{
+  --bg:#f2eee6; --panel:#fffcf6; --panel2:#ebe5d9; --line:#d6cdbd; --fg:#1d1a15; --muted:#6b6254;
+  --amber:#a86400; --amber-bg:#f8e7c8; --red:#c42a1e; --red-bg:#f8dcd7; --green:#1b844a; --green-bg:#d6efdf; color-scheme:light}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 var(--body);overscroll-behavior:none}
+.app{height:100%;display:flex;flex-direction:column;max-width:560px;margin:0 auto;
+  padding-top:env(safe-area-inset-top,0px)}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--panel2);border:1px solid var(--line);border-radius:10px;min-height:40px;padding:0 12px;cursor:pointer}
+button:active{transform:scale(.97)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+button.primary{background:var(--amber);border-color:var(--amber);color:var(--bg);font-weight:500}
+button.ghost{background:transparent}
+button.on{background:var(--amber-bg);border-color:var(--amber);color:var(--amber)}
+select,input[type=number]{background:var(--panel2);border:1px solid var(--line);border-radius:10px;min-height:40px;padding:0 10px}
+input[type=range]{width:100%;accent-color:var(--amber)}
+.lbl{font-family:var(--display);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.num{font-family:var(--display);font-variant-numeric:tabular-nums}
+svg.i{width:22px;height:22px;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* transport */
+.top{display:flex;align-items:center;gap:12px;padding:12px max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px));
+  background:var(--panel);border-bottom:1px solid var(--line)}
+.play{width:56px;height:56px;border-radius:50%;padding:0;display:grid;place-items:center;background:var(--panel2)}
+.play.going{background:var(--green-bg);border-color:var(--green);color:var(--green)}
+.tempo{background:transparent;border:0;padding:0;text-align:left;min-height:0}
+.tempo .bpm{font-family:var(--display);font-size:30px;font-weight:600;line-height:1}
+.tempo .sub{font-size:12px;color:var(--muted)}
+.counter{margin-left:auto;text-align:right}
+.counter .pos{font-family:var(--display);font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+.dots{display:flex;gap:5px;justify-content:flex-end;margin-top:6px}
+.dot{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--line)}
+.dot.acc{border-color:var(--muted)}
+.dot.lit{background:var(--amber);border-color:var(--amber)}
+.dot.lit.count{background:var(--red);border-color:var(--red)}
+
+main{flex:1;overflow-y:auto;padding:14px max(16px,env(safe-area-inset-right,0px)) 24px max(16px,env(safe-area-inset-left,0px))}
+.view{display:flex;flex-direction:column;gap:10px}
+
+/* pedals */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;align-items:center;gap:12px;position:relative}
+.card.rec{border-color:var(--red)}
+.card.count{border-color:var(--amber)}
+.rbtn{width:66px;height:66px;flex:none;border-radius:50%;padding:0;display:grid;place-items:center;color:var(--red);border:2px solid var(--line)}
+.rbtn svg.i{width:28px;height:28px}
+.rbtn.armed{background:var(--red-bg);border-color:var(--red)}
+.rbtn.armed.blink{animation:blink .5s steps(2) infinite}
+@keyframes blink{50%{background:transparent}}
+.tinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.tname{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tname b{font-family:var(--display);font-size:20px;font-weight:600;letter-spacing:.02em}
+.pill{font-size:12px;padding:2px 8px;border-radius:6px;background:var(--panel2);color:var(--muted);white-space:nowrap}
+.pill.ok{background:var(--green-bg);color:var(--green)}
+.pill.rec{background:var(--red-bg);color:var(--red)}
+.pill.count{background:var(--amber-bg);color:var(--amber)}
+.tag{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+.prog{height:8px;border-radius:4px;background:var(--panel2);overflow:hidden;position:relative}
+.prog i{position:absolute;inset:0 auto 0 0;width:0;background:var(--green);border-radius:4px}
+.prog.rec i{background:var(--red)}
+.prog .barmarks{position:absolute;inset:0;display:flex}
+.prog .barmarks span{flex:1;border-right:1px solid var(--bg)}
+.prog .barmarks span:last-child{border:0}
+.side{display:flex;flex-direction:column;gap:6px}
+.side button{width:48px;padding:0;font-family:var(--display);font-weight:600;font-size:17px}
+.side button.muted{background:var(--amber-bg);color:var(--amber);border-color:var(--amber)}
+.side button{min-height:36px;height:36px}
+.side button.del{display:grid;place-items:center;color:var(--muted)}
+.side button.del svg.i{width:19px;height:19px}
+.side button.del.confirm{background:var(--red-bg);border-color:var(--red);color:var(--red);font-weight:500}
+.undo-chip{position:absolute;top:-10px;right:66px;font-size:12px;min-height:28px;padding:0 10px;background:var(--panel);border-color:var(--amber);color:var(--amber)}
+.bigcount{position:fixed;left:0;right:0;top:38%;text-align:center;pointer-events:none;font-family:var(--display);font-weight:600;
+  font-size:min(42vw,220px);line-height:1;color:var(--amber);opacity:.85;text-shadow:0 0 0 transparent}
+.add{align-self:center;background:transparent;color:var(--muted)}
+
+/* panels */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.panel h2{margin:0;font-family:var(--display);font-size:20px;font-weight:600;letter-spacing:.02em}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.row>.grow{flex:1;min-width:0}
+.field{display:flex;flex-direction:column;gap:4px}
+.help{font-size:13px;color:var(--muted);margin:0}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{flex:1;border:0;border-radius:0;background:transparent}
+.seg button.on{background:var(--amber-bg);color:var(--amber)}
+.check{display:flex;align-items:center;gap:10px;min-height:40px}
+.check input{width:22px;height:22px;accent-color:var(--amber)}
+.meter{height:8px;border-radius:4px;background:var(--panel2);overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:var(--green)}
+.warn{color:var(--amber)}
+canvas{width:100%;display:block;border-radius:10px;background:var(--panel2)}
+.wave-c{touch-action:none;cursor:pointer}
+
+/* sheet */
+.back{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:11;max-width:560px;margin:0 auto;max-height:86%;overflow-y:auto;
+  background:var(--panel);border-top:1px solid var(--line);border-radius:18px 18px 0 0;
+  padding:16px max(16px,env(safe-area-inset-right,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  display:flex;flex-direction:column;gap:14px}
+.sheet>*{flex-shrink:0}
+.sheet h2{margin:0;font-family:var(--display);font-size:22px;font-weight:600}
+.sheet .hd{display:flex;align-items:center;justify-content:space-between}
+
+/* tabs */
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);background:var(--panel);border-top:1px solid var(--line);
+  padding:4px max(8px,env(safe-area-inset-right,0px)) calc(4px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px))}
+.tabs button{background:transparent;border:0;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;color:var(--muted);min-height:54px}
+.tabs button.on{color:var(--amber)}
+.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:20;
+  background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;max-width:90%;text-align:center}
+@media (prefers-reduced-motion: reduce){.rbtn.armed.blink{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <button class="play" id="playBtn" aria-label="Play"></button>
+    <button class="tempo" id="tempoBtn" aria-label="Tempo and meter">
+      <span class="bpm num" id="bpmTxt" style="display:block">96</span>
+      <span class="sub" id="meterTxt" style="display:block">BPM · 4/4</span>
+    </button>
+    <div class="counter">
+      <div class="pos" id="posTxt">1.1</div>
+      <div class="dots" id="dots"></div>
+    </div>
+  </header>
+
+  <main>
+    <section class="view" id="v-looper">
+      <div class="card" id="rhythmCard"></div>
+      <div id="tracks" class="view"></div>
+      <button class="add" id="addTrack">+ Add loop</button>
+    </section>
+
+    <section class="view" id="v-score" hidden>
+      <div class="panel">
+        <h2>Score</h2>
+        <p class="help">Only loops marked as melody are listed. Mark a loop in its ⋯ menu.</p>
+        <div class="field"><span class="lbl">Loop</span><select id="scTrack"></select></div>
+        <div class="row">
+          <div class="field grow"><span class="lbl">Grid</span>
+            <select id="scGrid"><option value="0.25">Sixteenth notes</option><option value="0.5">Eighth notes</option></select></div>
+          <div class="field grow"><span class="lbl">Key</span><select id="scKey"></select></div>
+        </div>
+        <div class="field"><span class="lbl">Shortest note: <span id="scMinTxt">80</span> ms</span>
+          <input type="range" id="scMin" min="40" max="250" step="10" value="80"></div>
+        <button class="primary" id="scRun">Transcribe loop</button>
+        <canvas id="roll" height="220" hidden></canvas>
+        <p class="help" id="scInfo"></p>
+        <div class="row">
+          <button id="scExport" class="grow" disabled>Export this loop</button>
+          <button id="scExportAll" class="grow">Export all melody loops</button>
+        </div>
+        <p class="help">Exports MusicXML with notation and tab. Open it in MuseScore.</p>
+      </div>
+    </section>
+
+    <section class="view" id="v-export" hidden>
+      <div class="panel">
+        <h2>Export audio</h2>
+        <div id="exChecks" class="view" style="gap:0"></div>
+        <div class="row">
+          <div class="field grow"><span class="lbl">Length in bars</span><input type="number" id="exBars" min="1" max="256" value="8"></div>
+          <label class="check grow"><input type="checkbox" id="exFade" checked> Fade out at the end</label>
+        </div>
+        <p class="help" id="exInfo"></p>
+        <button class="primary" id="exMix">Export mix (WAV)</button>
+        <button id="exStems">Export each track separately</button>
+      </div>
+    </section>
+
+    <section class="view" id="v-settings" hidden>
+      <div class="panel">
+        <h2>Input</h2>
+        <button id="micBtn">Enable microphone</button>
+        <div class="field"><span class="lbl">Input device</span><select id="inSel"><option value="">Default</option></select></div>
+        <div class="field"><div class="row" style="justify-content:space-between"><span class="lbl">Level</span><span class="help num" id="meterTxt2"></span></div><div class="meter"><i id="meterBar"></i></div></div>
+        <div class="field"><span class="lbl">Input gain: <span id="gainTxt" class="num" style="text-transform:none">+12 dB</span></span>
+          <input type="range" id="gainRange" min="-12" max="36" step="1" value="12" aria-label="Input gain in decibels"></div>
+        <p class="help">Play your loudest passage and raise the gain until the meter reaches the amber zone. If it turns red, lower it: clipped audio sounds distorted. The gain applies to new takes.</p>
+        <label class="check"><input type="checkbox" id="monChk"> Hear the input in the headphones</label>
+        <p class="help">Turn this on only for an electric guitar through an interface. It adds a small delay to what you hear.</p>
+      </div>
+      <div class="panel">
+        <h2>Latency</h2>
+        <div class="row"><span class="num" style="font-size:34px;font-weight:600" id="latTxt">0 ms</span><span class="help" id="latProfile"></span></div>
+        <input type="range" id="latRange" min="0" max="400" step="1" value="0" aria-label="Latency in milliseconds">
+        <div class="row"><button id="latMinus" class="grow">−1 ms</button><button id="latPlus" class="grow">+1 ms</button></div>
+        <button class="primary" id="calBtn">Auto-calibrate</button>
+        <p class="help">Unplug headphones, turn the phone volume up and keep the room quiet. The app plays six clicks and measures how late the microphone hears them. The value is saved for the current input device.</p>
+        <p class="help" id="calInfo"></p>
+        <p class="help" id="outLat"></p>
+      </div>
+      <div class="panel">
+        <h2>Guitar</h2>
+        <div class="field"><span class="lbl">Tuning for tab</span>
+          <select id="tuneSel">
+            <option value="std">Standard (E A D G B E)</option>
+            <option value="dropd">Drop D (D A D G B E)</option>
+            <option value="half">Half step down (Eb Ab Db Gb Bb Eb)</option>
+            <option value="dadgad">DADGAD</option>
+          </select></div>
+      </div>
+      <div class="panel">
+        <h2>Session</h2>
+        <p class="help">Loops and settings are saved on this phone automatically.</p>
+        <button id="newSess">Start a new session</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs" id="tabs">
+    <button data-v="looper" class="on"><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>Looper</button>
+    <button data-v="score"><svg class="i" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>Score</button>
+    <button data-v="export"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>Export</button>
+    <button data-v="settings"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Settings</button>
+  </nav>
+</div>
+
+<div class="back" id="back" hidden></div>
+<div class="sheet" id="sheet" hidden></div>
+<div class="bigcount" id="bigcount" hidden></div>
+<div class="toast" id="toast" hidden></div>
+<input type="file" id="fileIn" accept="audio/*" hidden>
+
+<script>
+"use strict";
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const mod = (a, n) => ((a % n) + n) % n;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const IC = {
+  play: '<svg class="i" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg>',
+  stop: '<svg class="i" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></svg>',
+  rec: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="currentColor"/></svg>',
+  dub: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></svg>',
+  dots: '<svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/></svg>',
+  metro: '<svg class="i" viewBox="0 0 24 24"><path d="M9 3h6l4 18H5z"/><path d="M12 15l5-8"/></svg>',
+  wave: '<svg class="i" viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 7v10M21 12h0"/></svg>',
+  trash: '<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+  x: '<svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'
+};
+let toastT;
+function toast(msg, ms = 2600) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, ms); }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/* ---------- state ---------- */
+const TUNINGS = {
+  std: [40, 45, 50, 55, 59, 64], dropd: [38, 45, 50, 55, 59, 64],
+  half: [39, 44, 49, 54, 58, 63], dadgad: [38, 45, 50, 55, 57, 62]
+};
+const S = {
+  bpm: 96, num: 4, den: 4, countIn: 4, chain: false,
+  playing: false, origin: 0,
+  rhythm: { source: 'metro', sound: 'click', vol: 0.8, muted: false, fileName: '', fileBpm: 120, offset: 0, detected: null, bars: 0 },
+  tracks: []
+};
+const CFG = { latencyMs: 0, profiles: {}, monitor: false, tuning: 'std', inputId: '', device: '', inputGainDb: 12 };
+try { Object.assign(CFG, JSON.parse(localStorage.getItem('gl-cfg') || '{}')); } catch (e) {}
+function saveCfg() { try { localStorage.setItem('gl-cfg', JSON.stringify(CFG)); } catch (e) {} }
+
+let nextId = 1;
+function newTrack(i) {
+  return { id: nextId++, name: 'Loop ' + i, bars: 4, data: null, anchor: 0, undo: [], muted: false, solo: false, vol: 0.9,
+    melody: i > 1, mode: 'overdub', src: null, gain: null, lastTake: 0, notes: null };
+}
+for (let i = 1; i <= 3; i++) S.tracks.push(newTrack(i));
+
+const spb = () => 60 / S.bpm;
+const barSec = () => spb() * S.num;
+const hasLoops = () => S.tracks.some(t => t.data);
+const srOf = t => t.sr || (ctx && ctx.sampleRate) || 48000;
+const trackBars = t => t.data ? Math.max(1, Math.round(t.data.length / srOf(t) / barSec())) : t.bars;
+
+/* ---------- audio engine ---------- */
+let ctx = null, master, rhythmGain, clickGain, rhythmBuf = null, rhythmSrc = null, rhythmRaw = null;
+let schedTimer = null, nextBeat = 0, wakeLock = null;
+let rec = null;               // current take
+const captures = new Set();   // active input captures
+const ring = [];              // recent input chunks
+const noiseCache = new WeakMap();
+
+function ensureCtx() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+    master = ctx.createGain(); master.connect(ctx.destination);
+    rhythmGain = ctx.createGain(); rhythmGain.connect(master);
+    clickGain = ctx.createGain(); clickGain.gain.value = 0.8; clickGain.connect(master);
+    S.tracks.forEach(t => attachTrack(t));
+    if (rhythmRaw) buildRhythmBuffer();
+    // restored loops recorded at another sample rate
+    S.tracks.forEach(t => { if (t.data && t.sr && t.sr !== ctx.sampleRate) { t.data = resample(t.data, t.sr, ctx.sampleRate); t.undo = []; } t.sr = ctx.sampleRate; });
+    applyGains();
+  }
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+function attachTrack(t) { if (!ctx || t.gain) return; t.gain = ctx.createGain(); t.gain.connect(master); }
+function resample(x, from, to) {
+  const n = Math.round(x.length * to / from), y = new Float32Array(n), r = from / to;
+  for (let i = 0; i < n; i++) { const p = i * r, k = Math.floor(p), f = p - k; y[i] = (x[k] || 0) * (1 - f) + (x[k + 1] || 0) * f; }
+  return y;
+}
+function noiseFor(c) {
+  let b = noiseCache.get(c);
+  if (!b) { b = c.createBuffer(1, Math.round(c.sampleRate * 0.1), c.sampleRate); const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; noiseCache.set(c, b); }
+  return b;
+}
+// lvl: 0 = downbeat, 1 = secondary accent, 2 = other beats
+function click(c, t, lvl, dest, kind) {
+  const g = c.createGain(); g.connect(dest);
+  if (kind === 'hat') {
+    const s = c.createBufferSource(); s.buffer = noiseFor(c);
+    const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = lvl === 0 ? 5000 : 8000;
+    s.connect(hp); hp.connect(g);
+    g.gain.setValueAtTime(lvl === 0 ? 0.9 : lvl === 1 ? 0.6 : 0.4, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    s.start(t); s.stop(t + 0.08);
+  } else {
+    const o = c.createOscillator(); o.type = kind === 'wood' ? 'triangle' : 'sine';
+    o.frequency.value = kind === 'wood' ? [1150, 950, 780][lvl] : [1600, 1250, 1000][lvl];
+    o.connect(g);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(lvl === 0 ? 1 : 0.6, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.001, t + (kind === 'wood' ? 0.05 : 0.035));
+    o.start(t); o.stop(t + 0.07);
+  }
+}
+function beatLevel(b) {
+  const inBar = mod(b, S.num);
+  if (inBar === 0) return 0;
+  if (S.den === 8 && S.num % 3 === 0 && inBar % 3 === 0) return 1;
+  return 2;
+}
+function applyGains() {
+  if (!ctx) return;
+  const now = ctx.currentTime, anySolo = S.tracks.some(t => t.solo && t.data);
+  S.tracks.forEach(t => { if (t.gain) t.gain.gain.setTargetAtTime((t.muted || (anySolo && !t.solo)) ? 0 : t.vol, now, 0.01); });
+  rhythmGain.gain.setTargetAtTime(S.rhythm.muted ? 0 : S.rhythm.vol, now, 0.01);
+}
+
+/* count-in windows: list of record start times not yet reached */
+function pendingStarts() {
+  const out = [];
+  if (rec) { out.push({ tr: rec.tr, start: rec.start }); if (rec.next) out.push({ tr: rec.next, start: rec.nextStart }); }
+  return out;
+}
+function inCountIn(t) {
+  for (const p of pendingStarts()) if (t < p.start - 0.001 && t >= p.start - S.countIn * spb() - 0.001) return true;
+  return false;
+}
+function sched() {
+  const ahead = ctx.currentTime + 0.15;
+  for (;;) {
+    const t = S.origin + nextBeat * spb();
+    if (t > ahead) break;
+    if (t >= ctx.currentTime - 0.01) {
+      const lvl = beatLevel(nextBeat);
+      const metroOn = S.rhythm.source === 'metro' && !S.rhythm.muted && t >= S.origin - 0.001;
+      if (metroOn) click(ctx, t, lvl, rhythmGain, S.rhythm.sound);
+      else if (inCountIn(t)) click(ctx, t, lvl, clickGain, 'click');
+    }
+    nextBeat++;
+  }
+}
+function startTrackSource(t, when) {
+  if (!ctx || !t.data) return;
+  attachTrack(t);
+  if (t.src) { try { t.src.stop(when); } catch (e) {} t.src = null; }
+  const ab = ctx.createBuffer(1, t.data.length, ctx.sampleRate); ab.copyToChannel(t.data, 0);
+  const s = ctx.createBufferSource(); s.buffer = ab; s.loop = true; s.connect(t.gain);
+  const len = t.data.length / ctx.sampleRate;
+  const st = Math.max(when, S.origin);
+  s.start(st, mod(st - (S.origin + t.anchor * barSec()), len));
+  t.src = s;
+}
+function stopTrackSource(t) { if (t.src) { try { t.src.stop(); } catch (e) {} t.src = null; } }
+
+/* Backing-track loop model: a bar grid (file tempo + offset of one downbeat) and a
+   selection of whole bars on that grid (startBar, loopBars). Bar k starts at off + k*barF. */
+const rDur = () => rhythmRaw ? rhythmRaw.ch[0].length / rhythmRaw.sr : 0;
+function rGrid() { const beatF = 60 / S.rhythm.fileBpm, barF = beatF * S.num; return { beatF, barF, off: mod(S.rhythm.offset, barF) }; }
+function rMaxBars() { const { barF, off } = rGrid(); return Math.max(1, Math.floor((rDur() - off) / barF + 1e-6)); }
+function rClamp() {
+  const r = S.rhythm; if (!rhythmRaw) return;
+  const max = rMaxBars();
+  r.loopBars = clamp(Math.round(r.loopBars || 4), 1, max);
+  r.startBar = clamp(Math.round(r.startBar || 0), 0, max - r.loopBars);
+}
+function rhythmLoop() {
+  rClamp();
+  const r = S.rhythm, { barF, off } = rGrid(), ls = off + r.startBar * barF;
+  return { ls, le: Math.min(rDur(), ls + r.loopBars * barF), rate: S.bpm / r.fileBpm };
+}
+// Move the grid so a bar line falls exactly at time t, keeping the loop near t.
+function alignStartTo(t) {
+  const r = S.rhythm; r.offset = t;
+  const { barF, off } = rGrid(); r.startBar = Math.round((t - off) / barF); rClamp();
+}
+let rPeaks = null;
+function buildPeaks() {
+  const d0 = rhythmRaw.ch[0], d1 = rhythmRaw.ch[1] || d0, step = Math.max(1, Math.floor(d0.length / 4000));
+  rPeaks = new Float32Array(Math.ceil(d0.length / step)); let mx = 1e-6;
+  for (let k = 0; k < rPeaks.length; k++) {
+    let m = 0; const e = Math.min(d0.length, (k + 1) * step);
+    for (let i = k * step; i < e; i += 2) { const v = Math.abs(d0[i] + d1[i]) * 0.5; if (v > m) m = v; }
+    rPeaks[k] = m; if (m > mx) mx = m;
+  }
+  for (let k = 0; k < rPeaks.length; k++) rPeaks[k] /= mx;
+}
+// Default selection: the first beat where the music starts becomes bar 1 of a 4-bar loop.
+function defaultRegion() {
+  const r = S.rhythm, dur = rDur(); let t0 = 0;
+  for (let k = 0; k < rPeaks.length; k++) if (rPeaks[k] > 0.12) { t0 = k / rPeaks.length * dur; break; }
+  const { beatF } = rGrid(), b0 = mod(r.detected ? r.detected.offset : r.offset, beatF);
+  const beat = b0 + Math.max(0, Math.ceil((t0 - 0.07 - b0) / beatF)) * beatF;
+  r.loopBars = 4; alignStartTo(snapOnset(beat, 0.05));
+}
+// Nearest transient around t (first sample above 30% of the local peak).
+function snapOnset(t, win) {
+  const d = rhythmRaw.ch[0], sr = rhythmRaw.sr, a = Math.max(0, Math.round((t - win) * sr)), b = Math.min(d.length, Math.round((t + win) * sr));
+  let pk = 0, pi = a; for (let i = a; i < b; i++) { const v = Math.abs(d[i]); if (v > pk) { pk = v; pi = i; } }
+  if (pk < 1e-3) return t;
+  for (let i = Math.max(0, pi - Math.round(0.03 * sr)); i <= pi; i++) if (Math.abs(d[i]) > pk * 0.3) return i / sr;
+  return pi / sr;
+}
+function startRhythmFile(when) {
+  stopRhythmFile();
+  if (S.rhythm.source !== 'file' || !rhythmBuf) return;
+  const { ls, le, rate } = rhythmLoop();
+  const s = ctx.createBufferSource(); s.buffer = rhythmBuf; s.loop = true; s.loopStart = ls; s.loopEnd = le; s.playbackRate.value = rate;
+  s.connect(rhythmGain);
+  const st = Math.max(when, S.origin);
+  s.start(st, ls + mod((st - S.origin) * rate, le - ls));
+  rhythmSrc = s;
+}
+function stopRhythmFile() { if (rhythmSrc) { try { rhythmSrc.stop(); } catch (e) {} rhythmSrc = null; } }
+function restartRhythm() { if (S.playing) startRhythmFile(ctx.currentTime + 0.05); }
+
+function startPlayback() {
+  S.playing = true;
+  nextBeat = Math.ceil((ctx.currentTime - S.origin) / spb() - 1e-6);
+  const when = ctx.currentTime + 0.05;
+  startRhythmFile(when);
+  S.tracks.forEach(t => startTrackSource(t, when));
+  clearInterval(schedTimer); schedTimer = setInterval(sched, 25); sched();
+  if (navigator.wakeLock) navigator.wakeLock.request('screen').then(w => wakeLock = w).catch(() => {});
+  renderTop();
+}
+function play() {
+  ensureCtx(); stopPreview();
+  if (S.playing) return;
+  S.origin = ctx.currentTime + 0.12;
+  startPlayback();
+}
+function stop() {
+  S.playing = false;
+  clearInterval(schedTimer);
+  stopRhythmFile();
+  S.tracks.forEach(stopTrackSource);
+  if (rec) { captures.delete(rec.cap); rec = null; }
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  renderTop(); renderTracks();
+}
+function restartIfPlaying() { if (S.playing) { stop(); play(); } }
+
+/* ---------- microphone ---------- */
+const WORKLET = `class Cap extends AudioWorkletProcessor{
+  constructor(){super();this.buf=new Float32Array(1024);this.n=0;this.f0=0;}
+  process(inputs){const ch=inputs[0]&&inputs[0][0];if(!ch)return true;
+    if(this.n===0)this.f0=currentFrame;
+    this.buf.set(ch,this.n);this.n+=ch.length;
+    if(this.n>=1024){this.port.postMessage({f:this.f0,d:this.buf.slice(0,this.n)});this.n=0;}
+    return true;}}
+registerProcessor('gl-cap',Cap);`;
+let stream = null, micSrc = null, inGain = null, capNode = null, monGain = null, workletReady = false, micLevel = 0, clipAt = 0;
+const dbToLin = db => Math.pow(10, db / 20);
+
+async function ensureMic() {
+  ensureCtx();
+  if (capNode) return true;
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    toast('The microphone needs the app to be opened from an https:// address.', 5000); return false;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+      deviceId: CFG.inputId ? { exact: CFG.inputId } : undefined } });
+  } catch (e) { toast('Microphone not available: ' + e.message, 4500); return false; }
+  // Preferred recorder: AudioWorklet. Chrome refuses it on file:// pages, so try a
+  // blob URL, then a data URL, then fall back to ScriptProcessorNode (works everywhere).
+  if (!workletReady && ctx.audioWorklet) {
+    const urls = [() => URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' })),
+                  () => 'data:application/javascript;charset=utf-8,' + encodeURIComponent(WORKLET)];
+    for (const mk of urls) { try { await ctx.audioWorklet.addModule(mk()); workletReady = true; break; } catch (e) {} }
+  }
+  micSrc = ctx.createMediaStreamSource(stream);
+  inGain = ctx.createGain(); inGain.gain.value = dbToLin(CFG.inputGainDb); micSrc.connect(inGain);
+  const sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
+  if (workletReady) {
+    capNode = new AudioWorkletNode(ctx, 'gl-cap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    capNode.port.onmessage = onCap;
+  } else {
+    const N = 1024;
+    capNode = ctx.createScriptProcessor(N, 1, 1);
+    // playbackTime is when this block's output plays; its input was captured one block earlier.
+    // Any constant offset left over is absorbed by latency calibration.
+    capNode.onaudioprocess = ev => onCap({ data: { f: Math.round(ev.playbackTime * ctx.sampleRate) - N, d: ev.inputBuffer.getChannelData(0).slice() } });
+  }
+  inGain.connect(capNode); capNode.connect(sink);
+  monGain = ctx.createGain(); monGain.gain.value = CFG.monitor ? 1 : 0; inGain.connect(monGain); monGain.connect(master);
+  const tr = stream.getAudioTracks()[0];
+  CFG.device = (tr && tr.label) || 'Default input';
+  if (CFG.profiles[CFG.device] != null) CFG.latencyMs = CFG.profiles[CFG.device];
+  saveCfg(); listInputs(); renderSettings();
+  return true;
+}
+function closeMic() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  try { micSrc && micSrc.disconnect(); inGain && inGain.disconnect(); capNode && capNode.disconnect(); monGain && monGain.disconnect(); } catch (e) {}
+  stream = micSrc = inGain = capNode = monGain = null;
+}
+async function listInputs() {
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+    $('inSel').innerHTML = '<option value="">Default</option>' + devs.map((d, i) =>
+      `<option value="${esc(d.deviceId)}" ${d.deviceId === CFG.inputId ? 'selected' : ''}>${esc(d.label || 'Input ' + (i + 1))}</option>`).join('');
+  } catch (e) {}
+}
+function onCap(e) {
+  const c = e.data;
+  let pk = 0; for (let i = 0; i < c.d.length; i++) { const a = Math.abs(c.d[i]); if (a > pk) pk = a; }
+  if (pk >= 0.98) clipAt = performance.now();
+  micLevel = Math.max(pk, micLevel * 0.9);
+  ring.push(c);
+  const keep = (ctx.sampleRate * 2) / 1024; while (ring.length > keep) ring.shift();
+  for (const cap of captures) feed(cap, c);
+}
+// cap.cutAt (frames) ends a take early: audio after it stays silent, the loop keeps its full length.
+const capEnd = cap => cap.startFrame + (cap.cutAt != null ? cap.cutAt : cap.len);
+function finalize(cap) { if (cap.done) return; cap.done = true; captures.delete(cap); cap.onDone(assemble(cap)); }
+function feed(cap, c) {
+  if (cap.done) return;
+  const end = c.f + c.d.length;
+  if (end > cap.startFrame && c.f < cap.startFrame + cap.len) cap.chunks.push(c);
+  if (end >= capEnd(cap)) finalize(cap);
+}
+function assemble(cap) {
+  const out = new Float32Array(cap.len), lim = cap.cutAt != null ? cap.cutAt : cap.len;
+  for (const c of cap.chunks) {
+    const o = c.f - cap.startFrame;
+    for (let i = 0; i < c.d.length; i++) { const k = o + i; if (k >= 0 && k < lim) out[k] = c.d[i]; }
+  }
+  if (cap.cutAt != null) { const F = Math.min(lim, 480); for (let i = 0; i < F; i++) out[lim - F + i] *= 1 - i / F; }   // 10 ms fade, no click
+  return out;
+}
+function capture(startFrame, len, onDone) {
+  const cap = { startFrame, len, chunks: [], done: false, onDone };
+  for (const c of ring) feed(cap, c);   // replay recent audio in case the window already started
+  if (!cap.done) captures.add(cap);
+  return cap;
+}
+
+/* ---------- recording ---------- */
+function nextEmptyAfter(tr) {
+  const i = S.tracks.indexOf(tr);
+  return S.tracks.slice(i + 1).find(t => !t.data) || null;
+}
+function takeLength(tr) {
+  const sr = ctx.sampleRate;
+  if (tr.data && tr.mode === 'overdub') return tr.data.length;
+  return Math.round(tr.bars * barSec() * sr);
+}
+function beginTake(tr, start) {
+  const sr = ctx.sampleRate, lat = CFG.latencyMs / 1000, len = takeLength(tr);
+  const overdub = !!(tr.data && tr.mode === 'overdub');
+  rec = { tr, start, end: start + len / sr, len, overdub, next: null, nextStart: 0 };
+  if (S.chain) {
+    const nx = nextEmptyAfter(tr);
+    if (nx) {
+      rec.next = nx;
+      const k = Math.ceil((rec.end + S.countIn * spb() - S.origin) / barSec() - 1e-6);
+      rec.nextStart = S.origin + k * barSec();
+    }
+  }
+  const myRec = rec;
+  rec.cap = capture(Math.round((start + lat) * sr), len, buf => finishTake(myRec, buf));
+  renderTracks();
+}
+async function recTap(id) {
+  const tr = S.tracks.find(t => t.id === id); if (!tr) return;
+  if (rec && (rec.tr === tr || rec.next === tr)) {          // cancel
+    if (rec.tr === tr && ctx.currentTime < rec.start) { captures.delete(rec.cap); rec = null; toast('Take cancelled'); }
+    else if (rec.tr === tr) { stopTakeEarly(rec); return; }
+    else { rec.next = null; toast('Next take cancelled'); }
+    renderTracks(); return;
+  }
+  if (rec) { toast('Finish the current take first'); return; }
+  if (!(await ensureMic())) return;
+  let start;
+  if (!S.playing) {
+    S.origin = ctx.currentTime + 0.15 + S.countIn * spb();
+    start = S.origin;
+    startPlayback();
+  } else {
+    const k = Math.ceil((ctx.currentTime + S.countIn * spb() + 0.08 - S.origin) / barSec() - 1e-6);
+    start = S.origin + k * barSec();
+  }
+  beginTake(tr, start);
+}
+function stopTakeEarly(r) {
+  if (r.cap.cutAt != null) return;
+  const sr = ctx.sampleRate, cut = clamp(Math.round((ctx.currentTime - r.start) * sr), 1, r.len);
+  r.cap.cutAt = cut; r.next = null;
+  const last = ring[ring.length - 1];
+  if (last && last.f + last.d.length >= capEnd(r.cap)) finalize(r.cap);
+  else setTimeout(() => finalize(r.cap), 1500);   // safety if the input stalls
+  if (cut < r.len - sr * 0.05) toast('Stopped. The rest of the loop stays silent.');
+}
+function finishTake(r, buf) {
+  if (rec !== r) return;
+  const tr = r.tr, sr = ctx.sampleRate;
+  if (r.overdub && tr.data && tr.data.length === r.len) {
+    tr.undo.push({ data: tr.data, anchor: tr.anchor }); if (tr.undo.length > 6) tr.undo.shift();
+    const off = mod(Math.round((r.start - (S.origin + tr.anchor * barSec())) * sr), r.len);
+    const nd = tr.data.slice();
+    for (let i = 0; i < r.len; i++) nd[(i + off) % r.len] += buf[i];
+    tr.data = nd;
+  } else {
+    if (tr.data) { tr.undo.push({ data: tr.data, anchor: tr.anchor }); if (tr.undo.length > 6) tr.undo.shift(); }
+    tr.data = buf;
+    tr.anchor = Math.round((r.start - S.origin) / barSec());
+  }
+  tr.sr = sr; tr.notes = null; tr.lastTake = Date.now(); tr.lastAct = 'take';
+  if (S.playing) startTrackSource(tr, ctx.currentTime + 0.03);
+  rec = null;
+  if (r.next && !r.next.data && S.playing) beginTake(r.next, r.nextStart);
+  renderAll(); markDirty();
+  setTimeout(renderTracks, 8200);
+}
+function undoTrack(tr) {
+  if (!tr.undo.length) return;
+  const u = tr.undo.pop(); tr.data = u.data; tr.anchor = u.anchor;
+  tr.notes = null;
+  if (S.playing) startTrackSource(tr, ctx.currentTime + 0.03);
+  toast(tr.lastAct === 'delete' ? 'Loop restored' : 'Last take undone'); tr.lastAct = 'take'; renderAll(); markDirty();
+}
+function clearTrack(tr) {
+  if (rec && rec.tr === tr) { captures.delete(rec.cap); rec = null; }
+  if (tr.data) { tr.undo.push({ data: tr.data, anchor: tr.anchor }); if (tr.undo.length > 6) tr.undo.shift(); tr.lastTake = Date.now(); tr.lastAct = 'delete'; setTimeout(renderTracks, 8200); }
+  stopTrackSource(tr); tr.data = null; tr.notes = null; tr.solo = false;
+  applyGains(); renderAll(); markDirty();
+}
+
+/* ---------- BPM detection ---------- */
+function detectBpm(buf) {
+  const sr = buf.sampleRate, n = Math.min(buf.length, sr * 60), ch = buf.numberOfChannels;
+  const hop = 512, win = 1024, frames = Math.floor((n - win) / hop);
+  const env = new Float32Array(frames);
+  const d0 = buf.getChannelData(0), d1 = ch > 1 ? buf.getChannelData(1) : d0;
+  for (let f = 0; f < frames; f++) {
+    let s = 0; const o = f * hop;
+    for (let i = 0; i < win; i += 2) { const v = (d0[o + i] + d1[o + i]) * 0.5; s += v * v; }
+    env[f] = Math.log(1e-6 + s);
+  }
+  const on = new Float32Array(frames);
+  for (let f = 1; f < frames; f++) on[f] = Math.max(0, env[f] - env[f - 1]);
+  let mean = 0; for (const v of on) mean += v; mean /= frames;
+  for (let f = 0; f < frames; f++) on[f] = Math.max(0, on[f] - mean);
+  const fps = sr / hop, minLag = Math.floor(fps * 60 / 200), maxLag = Math.ceil(fps * 60 / 60);
+  const ac = new Float32Array(maxLag + 2);
+  for (let L = minLag; L <= maxLag + 1; L++) { let s = 0; for (let f = 0; f + L < frames; f++) s += on[f] * on[f + L]; ac[L] = s / (frames - L); }
+  let best = minLag, bv = -1;
+  for (let L = minLag; L <= maxLag; L++) {
+    const bpm = 60 * fps / L, w = Math.exp(-0.5 * Math.pow(Math.log2(bpm / 115) / 0.9, 2));
+    const v = ac[L] * w; if (v > bv) { bv = v; best = L; }
+  }
+  const a = ac[best - 1] || 0, b = ac[best], c = ac[best + 1] || 0, den = a - 2 * b + c;
+  let lag = den ? best + 0.5 * (a - c) / den : best;
+  // Refine: the peak at K beats has K times the resolution of the one-beat peak.
+  const acAt = L => { let s = 0; for (let f = 0; f + L < frames; f++) s += on[f] * on[f + L]; return s / (frames - L); };
+  for (const K of [4, 8, 16, 32]) {
+    const c0 = Math.round(lag * K); if (c0 + 3 >= frames * 0.6) break;
+    let bl = c0, bv2 = -1; const vals = {};
+    for (let L = c0 - 3; L <= c0 + 3; L++) { vals[L] = acAt(L); if (vals[L] > bv2) { bv2 = vals[L]; bl = L; } }
+    if (bl === c0 - 3 || bl === c0 + 3) break;
+    const y0 = vals[bl - 1], y1 = vals[bl], y2 = vals[bl + 1], dd = y0 - 2 * y1 + y2;
+    lag = (dd ? bl + 0.5 * (y0 - y2) / dd : bl) / K;
+  }
+  let bpm = 60 * fps / lag;
+  if (Math.abs(bpm - Math.round(bpm)) < 0.15) bpm = Math.round(bpm);   // most backing tracks use whole-number tempos
+  // first beat: phase with strongest onsets
+  let bp = 0, bs = -1; const L = Math.round(lag);
+  for (let p = 0; p < L; p++) { let s = 0; for (let f = p; f < frames; f += lag) s += on[Math.round(f)] || 0; if (s > bs) { bs = s; bp = p; } }
+  return { bpm: Math.round(bpm * 10) / 10, offset: (bp * hop + win / 2) / sr };
+}
+
+/* ---------- rhythm file ---------- */
+function buildRhythmBuffer() {
+  rhythmBuf = ctx.createBuffer(rhythmRaw.ch.length, rhythmRaw.ch[0].length, rhythmRaw.sr);
+  rhythmRaw.ch.forEach((d, i) => rhythmBuf.copyToChannel(d, i));
+}
+async function loadRhythmFile(file) {
+  ensureCtx(); stopPreview();
+  toast('Loading ' + file.name + '…');
+  try {
+    const ab = await file.arrayBuffer();
+    const buf = await ctx.decodeAudioData(ab);
+    rhythmRaw = { sr: buf.sampleRate, ch: [] };
+    for (let i = 0; i < Math.min(2, buf.numberOfChannels); i++) rhythmRaw.ch.push(buf.getChannelData(i).slice());
+    rhythmBuf = buf;
+    const det = detectBpm(buf);
+    Object.assign(S.rhythm, { source: 'file', fileName: file.name, detected: det, fileBpm: det.bpm, offset: Math.round(det.offset * 1000) / 1000 });
+    buildPeaks(); defaultRegion();
+    if (!hasLoops()) S.bpm = Math.round(det.bpm);
+    restartRhythm(); renderAll(); markDirty();
+    openSheet('rhythm');
+  } catch (e) { toast('Could not read that audio file.'); }
+}
+
+/* ---------- latency calibration ---------- */
+async function calibrate() {
+  if (!(await ensureMic())) return;
+  if (S.playing) stop();
+  const sr = ctx.sampleRate, N = 6, gap = 0.6, pre = 0.3, t0 = ctx.currentTime + 0.5;
+  $('calInfo').textContent = 'Listening…';
+  for (let i = 0; i < N; i++) {
+    const t = t0 + i * gap, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'square'; o.frequency.value = 2000; o.connect(g); g.connect(ctx.destination);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.9, t + 0.001); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.015);
+    o.start(t); o.stop(t + 0.02);
+  }
+  const startFrame = Math.round((t0 - pre) * sr), len = Math.round((pre + N * gap + 0.3) * sr);
+  capture(startFrame, len, x => {
+    let ns = 0, nn = Math.round(pre * sr * 0.8); for (let i = 0; i < nn; i++) ns += x[i] * x[i];
+    const noise = Math.sqrt(ns / nn) + 1e-5, delays = [];
+    for (let i = 0; i < N; i++) {
+      const e = Math.round((pre + i * gap) * sr), w = Math.round(0.45 * sr);
+      let pk = 0; for (let k = e; k < e + w && k < x.length; k++) pk = Math.max(pk, Math.abs(x[k]));
+      if (pk < noise * 5) continue;
+      const th = Math.max(noise * 6, pk * 0.35);
+      for (let k = e; k < e + w && k < x.length; k++) if (Math.abs(x[k]) > th) { delays.push((k - e) / sr); break; }
+    }
+    if (delays.length < 4) { $('calInfo').textContent = "Couldn't hear the clicks clearly. Unplug headphones, turn the volume up and try again."; return; }
+    delays.sort((a, b) => a - b);
+    const med = delays[Math.floor(delays.length / 2)], spread = (delays[delays.length - 1] - delays[0]) * 1000;
+    setLatency(Math.round(med * 1000));
+    $('calInfo').textContent = `Measured ${Math.round(med * 1000)} ms from ${delays.length} clicks` + (spread > 15 ? ` (spread ${Math.round(spread)} ms, run it again in a quieter spot)` : '.');
+  });
+}
+function setLatency(ms) {
+  CFG.latencyMs = clamp(Math.round(ms), 0, 400);
+  CFG.profiles[CFG.device || 'Default input'] = CFG.latencyMs;
+  saveCfg(); renderSettings();
+}
+
+/* ---------- transcription ---------- */
+function yinPitch(x, p, W, tauMin, tauMax, d) {
+  d[0] = 1; let run = 0;
+  for (let tau = 1; tau <= tauMax; tau++) {
+    let s = 0; for (let j = 0; j < W; j++) { const v = x[p + j] - x[p + j + tau]; s += v * v; }
+    run += s; d[tau] = run ? s * tau / run : 1;
+  }
+  let tau = -1;
+  for (let t = tauMin; t <= tauMax; t++) if (d[t] < 0.15) { while (t + 1 <= tauMax && d[t + 1] < d[t]) t++; tau = t; break; }
+  if (tau < 0) return 0;
+  const a = d[tau - 1], b = d[tau], c = d[tau + 1] !== undefined ? d[tau + 1] : b, den = a - 2 * b + c;
+  return den ? tau + 0.5 * (a - c) / den : tau;
+}
+function median(a) { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; }
+
+function detectNotes(data, sr, minMs) {
+  const f = Math.max(1, Math.round(sr / 16000)), srd = sr / f, n = Math.floor(data.length / f);
+  const W = Math.round(srd * 0.046), hop = Math.round(srd * 0.008), tauMin = Math.floor(srd / 1300), tauMax = Math.ceil(srd / 72);
+  const x = new Float32Array(n + W + tauMax + 2);
+  for (let i = 0; i < n; i++) { let s = 0; for (let k = 0; k < f; k++) s += data[i * f + k]; x[i] = s / f; }
+  for (let i = 0; i < W + tauMax + 2; i++) x[n + i] = x[i % n];   // loop wraps around
+  const frames = Math.floor(n / hop), pitch = new Float32Array(frames), rms = new Float32Array(frames), d = new Float32Array(tauMax + 2);
+  let maxR = 0;
+  for (let i = 0; i < frames; i++) {
+    const p = i * hop; let s = 0; for (let j = 0; j < W; j++) s += x[p + j] * x[p + j];
+    rms[i] = Math.sqrt(s / W); if (rms[i] > maxR) maxR = rms[i];
+  }
+  const gate = Math.max(0.004, maxR * 0.06);
+  for (let i = 0; i < frames; i++) {
+    pitch[i] = NaN; if (rms[i] < gate) continue;
+    const tau = yinPitch(x, i * hop, W, tauMin, tauMax, d);
+    if (tau > 0) { const m = 69 + 12 * Math.log2(srd / tau / 440); if (m >= 36 && m <= 90) pitch[i] = m; }
+  }
+  const r = Array.from(pitch, v => isNaN(v) ? null : Math.round(v));
+  const sm = r.slice();   // majority smoothing over 5 frames
+  for (let i = 2; i < frames - 2; i++) {
+    const cnt = {}; for (let k = -2; k <= 2; k++) { const v = r[i + k]; if (v !== null) cnt[v] = (cnt[v] || 0) + 1; }
+    let bv = null, bc = 0; for (const k in cnt) if (cnt[k] > bc) { bc = cnt[k]; bv = +k; }
+    sm[i] = (r[i] === null && bc < 3) ? null : (bc >= 3 ? bv : r[i]);
+  }
+  const onset = new Uint8Array(frames); let last = -99;
+  for (let i = 4; i < frames; i++) {
+    const lo = Math.min(rms[i - 2], rms[i - 3], rms[i - 4]);
+    if (rms[i] > gate && rms[i] > lo * 1.3 && rms[i] >= rms[i - 1] && i - last > 8) { onset[i] = 1; last = i; }
+  }
+  const notes = []; let cur = null;
+  const close = i => { cur.end = i; notes.push(cur); cur = null; };
+  for (let i = 0; i < frames; i++) {
+    const m = sm[i];
+    if (m === null) { if (cur) close(i); continue; }
+    if (!cur) { cur = { start: i, ps: [pitch[i] || m] }; continue; }
+    const cm = Math.round(median(cur.ps.slice(-6)));
+    const changed = m !== cm && sm[i + 1] === m && sm[i + 2] === m;
+    if ((onset[i] && i - cur.start > 4) || changed) { close(i); cur = { start: i, ps: [pitch[i] || m] }; }
+    else cur.ps.push(isNaN(pitch[i]) ? m : pitch[i]);
+  }
+  if (cur) close(frames);
+  const fs = hop / srd, shift = W / 2 / srd;
+  return notes.map(o => ({ midi: Math.round(median(o.ps)), t0: o.start * fs + shift, t1: o.end * fs + shift }))
+    .filter(o => (o.t1 - o.t0) * 1000 >= minMs);
+}
+function quantize(raw, bars, unit) {
+  const qps = (S.bpm / 60) * (4 / S.den), total = bars * S.num * 4 / S.den;
+  let q = raw.map(o => {
+    let s = Math.round(o.t0 * qps / unit) * unit, e = Math.round(o.t1 * qps / unit) * unit;
+    if (e <= s) e = s + unit;
+    if (s >= total) { s -= total; e -= total; }
+    return { midi: o.midi, qs: s, qe: Math.min(e, total) };
+  }).filter(o => o.qe > o.qs).sort((a, b) => a.qs - b.qs);
+  const out = [];
+  for (const o of q) {
+    if (out.length && out[out.length - 1].qs === o.qs) continue;
+    if (out.length) out[out.length - 1].qe = Math.min(out[out.length - 1].qe, o.qs);
+    out.push(o);
+  }
+  return out.filter(o => o.qe > o.qs);
+}
+const KEYS = [[0, 'C major / A minor'], [1, 'G major / E minor'], [2, 'D major / B minor'], [3, 'A major / F# minor'], [4, 'E major / C# minor'],
+  [5, 'B major / G# minor'], [6, 'F# major / D# minor'], [-1, 'F major / D minor'], [-2, 'Bb major / G minor'], [-3, 'Eb major / C minor'],
+  [-4, 'Ab major / F minor'], [-5, 'Db major / Bb minor']];
+function guessKey(notes) {
+  let best = 0, bs = -1;
+  for (const [fifths] of KEYS) {
+    const tonic = mod(fifths * 7, 12), scale = [0, 2, 4, 5, 7, 9, 11].map(v => (v + tonic) % 12);
+    let s = 0; for (const n of notes) if (scale.includes(n.midi % 12)) s += n.qe - n.qs;
+    s -= Math.abs(fifths) * 0.01;
+    if (s > bs) { bs = s; best = fifths; }
+  }
+  return best;
+}
+function runTranscription(tr, unit, minMs) {
+  const raw = detectNotes(tr.data, ctx.sampleRate, minMs);
+  const bars = trackBars(tr);
+  tr.notes = quantize(raw, bars, unit); tr.noteBars = bars; tr.noteUnit = unit;
+  return tr.notes;
+}
+
+/* ---------- MusicXML ---------- */
+const SHARP = [['C', 0], ['C', 1], ['D', 0], ['D', 1], ['E', 0], ['F', 0], ['F', 1], ['G', 0], ['G', 1], ['A', 0], ['A', 1], ['B', 0]];
+const FLAT = [['C', 0], ['D', -1], ['D', 0], ['E', -1], ['E', 0], ['F', 0], ['G', -1], ['G', 0], ['A', -1], ['A', 0], ['B', -1], ['B', 0]];
+function spell(midi, fifths) {
+  const [step, alter] = (fifths < 0 ? FLAT : SHARP)[midi % 12];
+  return `<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>${Math.floor(midi / 12) - 1}</octave></pitch>`;
+}
+const DUR = [[16, 'whole', 0], [12, 'half', 1], [8, 'half', 0], [6, 'quarter', 1], [4, 'quarter', 0], [3, 'eighth', 1], [2, 'eighth', 0], [1, '16th', 0]];
+function decompose(d) { const out = []; for (const [v, type, dot] of DUR) while (d >= v) { out.push({ v, type, dot }); d -= v; } return out; }
+function assignFrets(notes, tuning) {
+  let prev = 3;
+  return notes.map(n => {
+    let best = null, bc = 1e9;
+    tuning.forEach((open, i) => {
+      const fr = n.midi - open; if (fr < 0 || fr > 20) return;
+      const c = Math.abs(fr - prev) + fr * 0.15 + (fr === 0 ? -0.3 : 0);
+      if (c < bc) { bc = c; best = { string: 6 - i, fret: fr }; }
+    });
+    if (best && best.fret > 0) prev = best.fret;
+    return best;
+  });
+}
+function partXml(tr, pid, fifths, tuning) {
+  const div = 4, mLen = Math.round(S.num * 4 / S.den * div), bars = tr.noteBars, total = mLen * bars;
+  const frets = assignFrets(tr.notes, tuning);
+  const ev = tr.notes.map((n, i) => ({ midi: n.midi, s: Math.round(n.qs * div), e: Math.round(n.qe * div), tab: frets[i] }));
+  const segs = []; let t = 0;
+  for (const n of ev) { if (n.s > t) segs.push({ rest: true, s: t, e: n.s }); segs.push(n); t = n.e; }
+  if (t < total) segs.push({ rest: true, s: t, e: total });
+  const tuneNames = tuning.map(m => FLAT[m % 12]);
+  const beatUnit = S.den === 8 ? 'eighth' : S.den === 2 ? 'half' : 'quarter';
+  const qTempo = S.bpm * 4 / S.den;
+  let xml = `<part id="${pid}">`;
+  for (let k = 0; k < bars; k++) {
+    const ms = k * mLen, me = ms + mLen;
+    xml += `<measure number="${k + 1}">`;
+    if (k === 0) {
+      xml += `<attributes><divisions>${div}</divisions><key><fifths>${fifths}</fifths></key><time><beats>${S.num}</beats><beat-type>${S.den}</beat-type></time><staves>2</staves>` +
+        `<clef number="1"><sign>G</sign><line>2</line><clef-octave-change>-1</clef-octave-change></clef><clef number="2"><sign>TAB</sign><line>5</line></clef>` +
+        `<staff-details number="2"><staff-lines>6</staff-lines>` +
+        tuning.map((m, i) => `<staff-tuning line="${i + 1}"><tuning-step>${tuneNames[i][0]}</tuning-step>${tuneNames[i][1] ? `<tuning-alter>${tuneNames[i][1]}</tuning-alter>` : ''}<tuning-octave>${Math.floor(m / 12) - 1}</tuning-octave></staff-tuning>`).join('') +
+        `</staff-details></attributes>` +
+        `<direction placement="above"><direction-type><metronome><beat-unit>${beatUnit}</beat-unit><per-minute>${S.bpm}</per-minute></metronome></direction-type><staff>1</staff><sound tempo="${qTempo}"/></direction>`;
+    }
+    const inBar = segs.filter(sg => sg.e > ms && sg.s < me);
+    const staffNotes = (staff, voice) => {
+      if (inBar.length === 1 && inBar[0].rest && inBar[0].s <= ms && inBar[0].e >= me)
+        return `<note><rest measure="yes"/><duration>${mLen}</duration><voice>${voice}</voice><staff>${staff}</staff></note>`;
+      let out = '';
+      for (const sg of inBar) {
+        const a = Math.max(sg.s, ms), b = Math.min(sg.e, me), pieces = decompose(b - a);
+        pieces.forEach((pc, pi) => {
+          if (sg.rest) { out += `<note><rest/><duration>${pc.v}</duration><voice>${voice}</voice><type>${pc.type}</type>${pc.dot ? '<dot/>' : ''}<staff>${staff}</staff></note>`; return; }
+          if (staff === 2 && !sg.tab) { out += `<note><rest/><duration>${pc.v}</duration><voice>${voice}</voice><type>${pc.type}</type>${pc.dot ? '<dot/>' : ''}<staff>${staff}</staff></note>`; return; }
+          const stop = pi > 0 || (pi === 0 && a > sg.s), start = pi < pieces.length - 1 || (pi === pieces.length - 1 && b < sg.e);
+          const ties = (stop ? '<tie type="stop"/>' : '') + (start ? '<tie type="start"/>' : '');
+          const tied = (stop ? '<tied type="stop"/>' : '') + (start ? '<tied type="start"/>' : '');
+          const tech = staff === 2 ? `<technical><string>${sg.tab.string}</string><fret>${sg.tab.fret}</fret></technical>` : '';
+          const nots = (tied || tech) ? `<notations>${tied}${tech}</notations>` : '';
+          out += `<note>${spell(sg.midi, fifths)}<duration>${pc.v}</duration>${ties}<voice>${voice}</voice><type>${pc.type}</type>${pc.dot ? '<dot/>' : ''}<staff>${staff}</staff>${nots}</note>`;
+        });
+      }
+      return out;
+    };
+    xml += staffNotes(1, 1) + `<backup><duration>${mLen}</duration></backup>` + staffNotes(2, 5) + `</measure>`;
+  }
+  return xml + '</part>';
+}
+function buildMusicXml(tracks, fifths) {
+  const tuning = TUNINGS[CFG.tuning] || TUNINGS.std;
+  const list = tracks.map((t, i) => `<score-part id="P${i + 1}"><part-name>${esc(t.name)}</part-name><score-instrument id="P${i + 1}-I1"><instrument-name>Guitar</instrument-name></score-instrument><midi-instrument id="P${i + 1}-I1"><midi-channel>${i + 1}</midi-channel><midi-program>26</midi-program></midi-instrument></score-part>`).join('');
+  const parts = tracks.map((t, i) => partXml(t, 'P' + (i + 1), fifths, tuning)).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0"><work><work-title>Guitar Looper ${new Date().toLocaleDateString()}</work-title></work><identification><encoding><software>Guitar Looper</software></encoding></identification><part-list>${list}</part-list>${parts}</score-partwise>`;
+}
+
+/* ---------- audio export ---------- */
+async function renderSources(sel, bars, fade) {
+  const sr = ctx.sampleRate, dur = bars * barSec();
+  const oc = new OfflineAudioContext(1, Math.ceil(dur * sr), sr);
+  const out = oc.createGain(); out.connect(oc.destination);
+  if (sel.rhythm) {
+    const g = oc.createGain(); g.gain.value = S.rhythm.vol; g.connect(out);
+    if (S.rhythm.source === 'metro') { for (let b = 0; b < bars * S.num; b++) click(oc, b * spb(), beatLevel(b), g, S.rhythm.sound); }
+    else if (rhythmBuf) {
+      const { ls, le, rate } = rhythmLoop();
+      const s = oc.createBufferSource(); s.buffer = rhythmBuf; s.loop = true; s.loopStart = ls; s.loopEnd = le; s.playbackRate.value = rate;
+      s.connect(g); s.start(0, ls);
+    }
+  }
+  for (const t of S.tracks) {
+    if (!t.data || !sel.tracks.includes(t.id)) continue;
+    const g = oc.createGain(); g.gain.value = t.vol; g.connect(out);
+    const ab = oc.createBuffer(1, t.data.length, sr); ab.copyToChannel(t.data, 0);
+    const s = oc.createBufferSource(); s.buffer = ab; s.loop = true; s.connect(g);
+    s.start(0, mod(-t.anchor * barSec(), t.data.length / sr));
+  }
+  if (fade && dur > 4) { out.gain.setValueAtTime(1, dur - 3); out.gain.linearRampToValueAtTime(0, dur); }
+  const res = await oc.startRendering();
+  const d = res.getChannelData(0);
+  let pk = 0; for (let i = 0; i < d.length; i++) pk = Math.max(pk, Math.abs(d[i]));
+  if (pk > 0.98) { const k = 0.98 / pk; for (let i = 0; i < d.length; i++) d[i] *= k; }
+  return d;
+}
+function wavBlob(d, sr) {
+  const n = d.length, b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, clamp(d[i], -1, 1) * 32767, true);
+  return new Blob([b], { type: 'audio/wav' });
+}
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 3000);
+}
+function stamp() { const d = new Date(), p = v => String(v).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`; }
+
+/* ---------- session storage ---------- */
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('guitar-looper', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('s');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+let dirtyT;
+function markDirty() { clearTimeout(dirtyT); dirtyT = setTimeout(saveSession, 1200); }
+async function saveSession() {
+  try {
+    const db = await idb();
+    const data = {
+      v: 2, bpm: S.bpm, num: S.num, den: S.den, countIn: S.countIn, chain: S.chain,
+      rhythm: Object.assign({}, S.rhythm), rhythmRaw,
+      tracks: S.tracks.map(t => ({ name: t.name, bars: t.bars, data: t.data, sr: t.sr || (ctx && ctx.sampleRate), anchor: t.anchor, muted: t.muted, vol: t.vol, melody: t.melody, mode: t.mode }))
+    };
+    db.transaction('s', 'readwrite').objectStore('s').put(data, 'current');
+  } catch (e) {}
+}
+async function loadSession() {
+  try {
+    const db = await idb();
+    const data = await new Promise((res, rej) => { const r = db.transaction('s').objectStore('s').get('current'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    if (!data) return;
+    Object.assign(S, { bpm: data.bpm, num: data.num, den: data.den, countIn: data.countIn, chain: data.v >= 2 ? !!data.chain : false });
+    Object.assign(S.rhythm, data.rhythm);
+    rhythmRaw = data.rhythmRaw || null;
+    if (rhythmRaw) { buildPeaks(); if (S.rhythm.loopBars == null) { S.rhythm.startBar = 0; S.rhythm.loopBars = 9999; } }
+    if (!rhythmRaw && S.rhythm.source === 'file') S.rhythm.source = 'metro';
+    S.tracks = data.tracks.map((d, i) => Object.assign(newTrack(i + 1), d, { undo: [] }));
+  } catch (e) {}
+}
+async function newSession() {
+  stop();
+  S.tracks.forEach(t => t.gain && t.gain.disconnect());
+  S.tracks = []; for (let i = 1; i <= 3; i++) { const t = newTrack(i); attachTrack(t); S.tracks.push(t); }
+  rhythmRaw = null; rhythmBuf = null; rPeaks = null;
+  Object.assign(S.rhythm, { source: 'metro', fileName: '', detected: null, muted: false });
+  applyGains(); renderAll(); saveSession(); toast('New session started');
+}
+
+/* ---------- rendering ---------- */
+function renderTop() {
+  $('playBtn').innerHTML = S.playing ? IC.stop : IC.play;
+  $('playBtn').classList.toggle('going', S.playing);
+  $('playBtn').setAttribute('aria-label', S.playing ? 'Stop' : 'Play');
+  $('bpmTxt').textContent = S.bpm;
+  $('meterTxt').textContent = `BPM${S.den === 8 ? ' (♪)' : ''} · ${S.num}/${S.den}`;
+  $('dots').innerHTML = Array.from({ length: Math.min(S.num, 12) }, (_, i) => `<span class="dot ${beatLevel(i) < 2 ? 'acc' : ''}"></span>`).join('');
+}
+function renderRhythm() {
+  const r = S.rhythm;
+  $('rhythmCard').innerHTML = `
+    <span style="color:var(--muted)">${r.source === 'file' ? IC.wave : IC.metro}</span>
+    <div class="tinfo"><div class="tname"><b>Rhythm</b>${r.muted ? '<span class="pill">Muted</span>' : ''}</div>
+      <div class="help" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.source === 'file' && rhythmRaw ? (rClamp(), `Bars ${r.startBar + 1}–${r.startBar + r.loopBars} · ${r.fileBpm} → ${S.bpm} BPM · ${esc(r.fileName)}`) : 'Metronome · ' + ({ click: 'click', wood: 'woodblock', hat: 'hi-hat' }[r.sound])}</div></div>
+    <div class="side" style="flex-direction:row"><button class="${r.muted ? 'muted' : ''}" data-act="rmute" aria-label="Mute rhythm">M</button><button data-act="rmenu" aria-label="Rhythm options">${IC.dots}</button></div>`;
+}
+let trackEls = {}, delConfirm = 0, delTimer = 0;
+function renderTracks() {
+  const now = Date.now();
+  $('tracks').innerHTML = S.tracks.map(t => {
+    const showUndo = t.undo.length && now - t.lastTake < 8000;
+    return `<div class="card" data-id="${t.id}">
+      ${showUndo ? `<button class="undo-chip" data-act="undo" data-id="${t.id}">${t.lastAct === 'delete' ? 'Undo delete' : 'Undo take'}</button>` : ''}
+      <button class="rbtn" data-act="rec" data-id="${t.id}" aria-label="Record ${esc(t.name)}"></button>
+      <div class="tinfo">
+        <div class="tname"><b>${esc(t.name)}</b><span class="pill"></span></div>
+        <div class="prog"><i></i><div class="barmarks">${'<span></span>'.repeat(Math.min(trackBars(t), 16))}</div></div>
+        <div class="row" style="gap:6px"><span class="tag">${trackBars(t)} bars</span>
+          ${t.data ? `<span class="tag">Next: ${t.mode === 'overdub' ? 'overdub' : 'replace'}</span>` : ''}${t.melody ? '<span class="tag">Melody</span>' : ''}${t.solo ? '<span class="tag">Solo</span>' : ''}</div>
+      </div>
+      <div class="side"><button class="${t.muted ? 'muted' : ''}" data-act="mute" data-id="${t.id}" aria-label="Mute">M</button>
+        <button class="del ${delConfirm === t.id ? 'confirm' : ''}" data-act="del" data-id="${t.id}" aria-label="${delConfirm === t.id ? 'Tap again to delete ' : 'Delete '}${esc(t.name)}" ${t.data ? '' : 'style="visibility:hidden"'}>${IC.trash}</button>
+        <button data-act="tmenu" data-id="${t.id}" aria-label="Loop options">${IC.dots}</button></div>
+    </div>`;
+  }).join('');
+  trackEls = {};
+  $('tracks').querySelectorAll('.card').forEach(el => {
+    trackEls[el.dataset.id] = { card: el, btn: el.querySelector('.rbtn'), pill: el.querySelector('.pill'), prog: el.querySelector('.prog'), bar: el.querySelector('.prog i') };
+  });
+  $('addTrack').hidden = S.tracks.length >= 6;
+  uiTick(true);
+}
+function renderAll() { renderTop(); renderRhythm(); renderTracks(); renderScoreList(); renderExport(); renderSettings(); }
+
+/* per-frame UI */
+let lastSig = {}, uiFrame = 0;
+function trackState(t, now) {
+  for (const p of pendingStarts()) {
+    if (p.tr !== t) continue;
+    if (now >= p.start) return { k: 'rec' };
+    const left = (p.start - now) / spb();
+    if (left <= S.countIn) return { k: 'count', n: S.countIn - Math.ceil(left - 1e-6) + 1 };
+    return { k: 'wait' };
+  }
+  if (rec && rec.tr === t) return { k: 'rec' };
+  if (t.data) return { k: S.playing ? (t.muted ? 'muted' : 'play') : 'ready' };
+  return { k: 'empty' };
+}
+function uiTick(force) {
+  const live = ctx && S.playing;
+  const now = ctx ? ctx.currentTime - (ctx.outputLatency || 0) : 0;
+  // counter
+  if (live) {
+    const pos = (now - S.origin) / spb();
+    if (pos < 0) $('posTxt').textContent = '−' + Math.ceil(-pos);
+    else $('posTxt').textContent = (Math.floor(pos / S.num) + 1) + '.' + (Math.floor(mod(pos, S.num)) + 1);
+    const beat = Math.floor(mod(pos, S.num)), counting = pendingStarts().some(p => now < p.start && now >= p.start - S.countIn * spb());
+    $('dots').querySelectorAll('.dot').forEach((d, i) => { d.classList.toggle('lit', i === beat); d.classList.toggle('count', counting); });
+  } else if (force || lastSig.top !== 'idle') {
+    $('posTxt').textContent = '1.1'; $('dots').querySelectorAll('.dot').forEach(d => d.classList.remove('lit', 'count'));
+  }
+  lastSig.top = live ? 'live' : 'idle';
+  let big = null;
+  for (const t of S.tracks) {
+    const el = trackEls[t.id]; if (!el) continue;
+    const st = live ? trackState(t, now) : { k: t.data ? 'ready' : 'empty' };
+    const label = { empty: 'Empty', wait: 'Waiting for the bar', count: `Count-in ${st.n}/${S.countIn}`, rec: 'Recording', play: 'Playing', muted: 'Muted', ready: 'Ready' }[st.k];
+    const sig = st.k + (st.n || '');
+    if (force || lastSig[t.id] !== sig) {
+      lastSig[t.id] = sig;
+      el.pill.textContent = label;
+      el.pill.className = 'pill ' + ({ play: 'ok', rec: 'rec', count: 'count', wait: 'count' }[st.k] || '');
+      el.card.classList.toggle('rec', st.k === 'rec'); el.card.classList.toggle('count', st.k === 'count' || st.k === 'wait');
+      const armed = ['rec', 'count', 'wait'].includes(st.k);
+      el.btn.classList.toggle('armed', armed); el.btn.classList.toggle('blink', st.k === 'count');
+      el.btn.innerHTML = armed ? IC.stop : (t.data && t.mode === 'overdub' ? IC.dub : IC.rec);
+      el.prog.classList.toggle('rec', st.k === 'rec');
+    }
+    if (st.k === 'count') big = st.n;
+    let ph = 0;
+    if (live && st.k === 'rec' && rec && rec.tr === t) ph = clamp((now - rec.start) / (rec.len / ctx.sampleRate), 0, 1);
+    else if (live && t.data) { const L = t.data.length / ctx.sampleRate; ph = mod(now - S.origin - t.anchor * barSec(), L) / L; }
+    el.bar.style.width = (ph * 100).toFixed(1) + '%';
+  }
+  if (sheetKind === 'rhythm' && (live || preview) && S.rhythm.source === 'file' && !rDrag && (uiFrame++ & 1)) { drawOverview(); drawDetail(); }
+  const bc = $('bigcount');
+  if (big !== null) { bc.hidden = false; bc.textContent = big; } else bc.hidden = true;
+  const dbfs = 20 * Math.log10(micLevel + 1e-6), clipping = performance.now() - clipAt < 1500;
+  const mb = $('meterBar'); mb.style.width = clamp((dbfs + 60) / 60 * 100, 0, 100) + '%';
+  mb.style.background = clipping ? 'var(--red)' : dbfs > -6 ? 'var(--amber)' : 'var(--green)';
+  const mt = $('meterTxt2'); if (mt) mt.textContent = !capNode ? '' : clipping ? 'Too loud: lower the gain' : micLevel < 0.003 ? 'No signal' : Math.round(dbfs) + ' dB';
+  micLevel *= 0.97;
+}
+function loop() { uiTick(false); requestAnimationFrame(loop); }
+
+/* ---------- sheets ---------- */
+let rmFileArmed = false;
+let sheetKind = null, sheetId = null, confirmClear = 0;
+function closeSheet() { stopPreview(); $('sheet').hidden = true; $('back').hidden = true; sheetKind = null; }
+function openSheet(kind, id) {
+  sheetKind = kind; sheetId = id;
+  const sh = $('sheet'); let h = '';
+  const locked = hasLoops();
+  if (kind === 'tempo') {
+    const sigs = ['2/4', '3/4', '4/4', '5/4', '6/8', '7/8', '9/8', '12/8'];
+    h = `<div class="hd"><h2>Tempo and meter</h2><button class="ghost" data-act="close" aria-label="Close">${IC.x}</button></div>
+      ${locked ? '<p class="help warn">Tempo and meter are locked while loops have audio. Clear the loops to change them.</p>' : ''}
+      <div class="field"><span class="lbl">BPM${S.den === 8 ? ' (counted in eighth notes)' : ''}</span>
+        <div class="row"><button data-act="bpm-" ${locked ? 'disabled' : ''}>−</button>
+        <input type="number" id="shBpm" class="grow" min="30" max="300" value="${S.bpm}" ${locked ? 'disabled' : ''} style="text-align:center;font-size:20px">
+        <button data-act="bpm+" ${locked ? 'disabled' : ''}>+</button><button data-act="tap" ${locked ? 'disabled' : ''}>Tap</button></div></div>
+      <div class="row">
+        <div class="field grow"><span class="lbl">Time signature</span><select id="shSig" ${locked ? 'disabled' : ''}>${sigs.map(s => `<option ${s === S.num + '/' + S.den ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+        <div class="field grow"><span class="lbl">Count-in</span><select id="shCount">${[0, 2, 3, 4, 6, 8, 12].map(v => `<option value="${v}" ${v === S.countIn ? 'selected' : ''}>${v ? v + ' beats' : 'None'}</option>`).join('')}</select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="shChain" ${S.chain ? 'checked' : ''}> After a take, arm the next empty loop</label>
+      <p class="help">Recording always starts on a bar line, after the count-in, and stops by itself when the loop length is reached.</p>`;
+  } else if (kind === 'rhythm') {
+    const r = S.rhythm;
+    let fileUi = '';
+    if (r.source === 'file') {
+      if (!rhythmRaw) fileUi = `<button class="primary" data-act="pick">Choose an audio file</button><p class="help">WAV, MP3, M4A or OGG. The app guesses its tempo; you can correct it.</p>`;
+      else {
+        fileUi = `<div class="row"><span class="grow" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.fileName)}</span><button data-act="pick">Replace</button><button data-act="rmfile" id="rmFileBtn" style="color:var(--red)">Remove</button></div>
+          <div class="field"><span class="lbl">Tempo of the file</span>
+            <div class="row"><button data-act="fb/">÷2</button><input type="number" id="shFbpm" class="grow" step="0.1" min="30" max="300" value="${r.fileBpm}" style="text-align:center"><button data-act="fb*">×2</button></div>
+            ${r.detected ? `<p class="help">Detected about ${r.detected.bpm} BPM. Detectors often land on half or double the real tempo.</p>` : ''}</div>
+          <div class="field"><div class="row" style="justify-content:space-between"><span class="lbl">Whole file</span><span class="help num" id="rwDur"></span></div>
+            <canvas id="rwOver" class="wave-c" height="104" aria-label="Waveform of the whole file with bar lines and the looped section"></canvas>
+            <p class="help">Drag the amber section to move it, or drag its edges to change its length. Tap anywhere to start the loop at that bar.</p></div>
+          <p id="rwInfo" style="margin:0;font-weight:500"></p>
+          <div class="row"><button class="primary grow" id="rwPlay" data-act="prev"></button></div>
+          <label class="check" style="min-height:32px"><input type="checkbox" id="rwClick" ${r.prevClick !== false ? 'checked' : ''}> Click on the detected beats while listening</label>
+          <div class="row">
+            <div class="field grow"><span class="lbl">Starts at bar</span><div class="row" style="gap:6px"><button data-act="sb-">−</button><span class="num grow" id="rwStart" style="text-align:center;font-size:20px"></span><button data-act="sb+">+</button></div></div>
+            <div class="field grow"><span class="lbl">Length in bars</span><div class="row" style="gap:6px"><button data-act="lb-">−</button><span class="num grow" id="rwLen" style="text-align:center;font-size:20px"></span><button data-act="lb+">+</button></div></div>
+          </div>
+          <div class="field"><span class="lbl">Loop start, zoomed</span>
+            <canvas id="rwDetail" class="wave-c" height="96" aria-label="Zoomed waveform around the loop start with beat lines"></canvas>
+            <p class="help">The amber line is where the loop starts; grey lines are the detected beats. If they don't sit on the drum hits, tap the first hit of the bar to snap the grid to it, or nudge it.</p>
+            <div class="row" style="gap:6px"><button class="grow" data-act="off-">−5 ms</button><button class="grow" data-act="off+">+5 ms</button><button class="grow" data-act="beat-">◀ beat</button><button class="grow" data-act="beat+">beat ▶</button></div>
+            <button class="ghost" data-act="regdef">Reset to the detected start</button></div>
+          <p class="help" id="rwRate"></p>`;
+      }
+    }
+    h = `<div class="hd"><h2>Rhythm</h2><button class="ghost" data-act="close" aria-label="Close">${IC.x}</button></div>
+      <div class="seg"><button class="${r.source === 'metro' ? 'on' : ''}" data-act="src-metro">Metronome</button><button class="${r.source === 'file' ? 'on' : ''}" data-act="src-file">Audio file</button></div>
+      ${r.source === 'metro' ? `<div class="field"><span class="lbl">Sound</span><select id="shSound">${[['click', 'Click'], ['wood', 'Woodblock'], ['hat', 'Hi-hat']].map(([v, n]) => `<option value="${v}" ${v === r.sound ? 'selected' : ''}>${n}</option>`).join('')}</select></div>` : fileUi}
+      <div class="field"><span class="lbl">Volume</span><input type="range" id="shRvol" min="0" max="1" step="0.01" value="${r.vol}"></div>`;
+  } else if (kind === 'track') {
+    const t = S.tracks.find(x => x.id === id); if (!t) return;
+    const barsNow = trackBars(t);
+    h = `<div class="hd"><h2>${esc(t.name)}</h2><button class="ghost" data-act="close" aria-label="Close">${IC.x}</button></div>
+      <div class="field"><span class="lbl">Length in bars</span>
+        <select id="shBars" ${t.data && t.mode === 'overdub' ? 'disabled' : ''}>${[1, 2, 3, 4, 6, 8, 12, 16].map(v => `<option ${v === (t.data && t.mode === 'overdub' ? barsNow : t.bars) ? 'selected' : ''}>${v}</option>`).join('')}</select>
+        ${t.data && t.mode === 'overdub' ? '<p class="help">Switch to Replace or clear the loop to change its length.</p>' : ''}</div>
+      <div class="field"><span class="lbl">Next take</span>
+        <div class="seg"><button class="${t.mode === 'overdub' ? 'on' : ''}" data-act="mode-overdub">Overdub</button><button class="${t.mode === 'replace' ? 'on' : ''}" data-act="mode-replace">Replace</button></div></div>
+      <label class="check"><input type="checkbox" id="shMel" ${t.melody ? 'checked' : ''}> Melody loop (can be transcribed)</label>
+      <div class="field"><span class="lbl">Volume (up to 4× for quiet takes)</span><input type="range" id="shTvol" min="0" max="4" step="0.01" value="${t.vol}"></div>
+      <div class="row"><button class="grow ${t.solo ? 'on' : ''}" data-act="solo">${t.solo ? 'Solo on' : 'Solo'}</button>
+        <button class="grow" data-act="undo" ${t.undo.length ? '' : 'disabled'}>Undo take${t.undo.length ? ' (' + t.undo.length + ')' : ''}</button></div>
+      <button data-act="clear" style="color:var(--red)" ${t.data ? '' : 'disabled'}>${confirmClear === t.id ? 'Tap again to delete this loop' : 'Delete loop'}</button>
+      ${S.tracks.length > 1 && S.tracks.indexOf(t) >= 3 ? '<button class="ghost" data-act="remove">Remove this loop</button>' : ''}`;
+  }
+  sh.innerHTML = h; sh.hidden = false; $('back').hidden = false;
+  bindSheetInputs();
+}
+function bindSheetInputs() {
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  on('shBpm', 'change', e => setBpm(+e.target.value));
+  on('shSig', 'change', e => { const [n, d] = e.target.value.split('/').map(Number); S.num = n; S.den = d; S.tracks.forEach(t => t.notes = null); restartIfPlaying(); renderAll(); markDirty(); openSheet('tempo'); });
+  on('shCount', 'change', e => { S.countIn = +e.target.value; markDirty(); });
+  on('shChain', 'change', e => { S.chain = e.target.checked; markDirty(); });
+  on('shSound', 'change', e => { S.rhythm.sound = e.target.value; renderRhythm(); markDirty(); });
+  on('shRvol', 'input', e => { S.rhythm.vol = +e.target.value; applyGains(); markDirty(); });
+  on('shFbpm', 'change', e => { const ls = rhythmRaw ? rhythmLoop().ls : 0; S.rhythm.fileBpm = clamp(+e.target.value || 120, 30, 300); if (rhythmRaw) alignStartTo(ls); rChanged(); });
+  if ($('rwOver')) bindWaveEditor();
+  on('rwClick', 'change', e => { S.rhythm.prevClick = e.target.checked; markDirty(); });
+  const t = S.tracks.find(x => x.id === sheetId);
+  if (t) {
+    on('shBars', 'change', e => { t.bars = +e.target.value; renderTracks(); markDirty(); });
+    on('shMel', 'change', e => { t.melody = e.target.checked; renderTracks(); renderScoreList(); markDirty(); });
+    on('shTvol', 'input', e => { t.vol = +e.target.value; applyGains(); markDirty(); });
+  }
+}
+function setBpm(v) {
+  if (hasLoops()) return;
+  S.bpm = clamp(Math.round(v) || 96, 30, 300);
+  restartIfPlaying(); renderTop(); renderRhythm(); markDirty();
+  const el = $('shBpm'); if (el) el.value = S.bpm;
+}
+let taps = [];
+function tap() {
+  const n = performance.now(); taps = taps.filter(t => n - t < 2500); taps.push(n);
+  if (taps.length >= 3) { const iv = (taps[taps.length - 1] - taps[0]) / (taps.length - 1); setBpm(60000 / iv); }
+}
+function sheetAction(act) {
+  const r = S.rhythm, t = S.tracks.find(x => x.id === sheetId);
+  if (act === 'close') return closeSheet();
+  if (act === 'bpm-') return setBpm(S.bpm - 1);
+  if (act === 'bpm+') return setBpm(S.bpm + 1);
+  if (act === 'tap') return tap();
+  if (act === 'src-metro') { stopPreview(); r.source = 'metro'; stopRhythmFile(); renderRhythm(); markDirty(); return openSheet('rhythm'); }
+  if (act === 'src-file') { r.source = 'file'; if (rhythmRaw && ctx && !rhythmBuf) buildRhythmBuffer(); restartRhythm(); renderRhythm(); markDirty(); return openSheet('rhythm'); }
+  if (act === 'pick') return $('fileIn').click();
+  if (act === 'fb/' || act === 'fb*') { const ls = rhythmLoop().ls; r.fileBpm = Math.round(clamp(act === 'fb/' ? r.fileBpm / 2 : r.fileBpm * 2, 30, 300) * 10) / 10; alignStartTo(ls); return rChanged(); }
+  if (act === 'off-' || act === 'off+') { alignStartTo(rhythmLoop().ls + (act === 'off+' ? 0.005 : -0.005)); return rChanged(); }
+  if (act === 'beat-' || act === 'beat+') { alignStartTo(rhythmLoop().ls + (act === 'beat+' ? 1 : -1) * rGrid().beatF); return rChanged(); }
+  if (act === 'sb-' || act === 'sb+') { r.startBar += act === 'sb+' ? 1 : -1; rClamp(); return rChanged(); }
+  if (act === 'lb-' || act === 'lb+') { r.loopBars += act === 'lb+' ? 1 : -1; rClamp(); return rChanged(); }
+  if (act === 'regdef') { defaultRegion(); return rChanged(); }
+  if (act === 'prev') return preview ? stopPreview() : startPreview();
+  if (act === 'rmfile') {
+    if (!rmFileArmed) { rmFileArmed = true; $('rmFileBtn').textContent = 'Tap again'; setTimeout(() => { rmFileArmed = false; const b = $('rmFileBtn'); if (b) b.textContent = 'Remove'; }, 3000); return; }
+    rmFileArmed = false; stopPreview(); stopRhythmFile();
+    rhythmRaw = null; rhythmBuf = null; rPeaks = null;
+    Object.assign(r, { source: 'metro', fileName: '', detected: null });
+    renderRhythm(); markDirty(); toast('Audio file removed. Back to the metronome.'); return openSheet('rhythm');
+  }
+  if (!t) return;
+  if (act === 'mode-overdub' || act === 'mode-replace') { t.mode = act.slice(5); renderTracks(); markDirty(); return openSheet('track', t.id); }
+  if (act === 'solo') { t.solo = !t.solo; applyGains(); renderTracks(); return openSheet('track', t.id); }
+  if (act === 'undo') { undoTrack(t); return openSheet('track', t.id); }
+  if (act === 'clear') {
+    if (confirmClear !== t.id) { confirmClear = t.id; setTimeout(() => { if (confirmClear === t.id) { confirmClear = 0; if (sheetKind === 'track') openSheet('track', t.id); } }, 3000); return openSheet('track', t.id); }
+    confirmClear = 0; clearTrack(t); toast(t.name + ' deleted'); return openSheet('track', t.id);
+  }
+  if (act === 'remove') { stopTrackSource(t); t.gain && t.gain.disconnect(); S.tracks = S.tracks.filter(x => x !== t); closeSheet(); renderAll(); markDirty(); }
+}
+
+/* ---------- backing-track waveform editor ---------- */
+// Preview: plays only the selected bars on repeat, at the session tempo, without the loops.
+let preview = null;
+function startPreview() {
+  ensureCtx(); if (S.playing) stop(); stopPreview();
+  if (!rhythmRaw) return;
+  if (!rhythmBuf) buildRhythmBuffer();
+  const r = S.rhythm, { ls, le, rate } = rhythmLoop();
+  const g = ctx.createGain(); g.gain.value = r.vol; g.connect(master);
+  const s = ctx.createBufferSource(); s.buffer = rhythmBuf; s.loop = true; s.loopStart = ls; s.loopEnd = le; s.playbackRate.value = rate; s.connect(g);
+  const t0 = ctx.currentTime + 0.05; s.start(t0, ls);
+  preview = { src: s, gain: g, t0, nextK: 0, beat: rGrid().beatF / rate, timer: setInterval(previewSched, 25) };
+  previewSched(); updPreviewBtn();
+}
+function previewSched() {
+  if (!preview) return;
+  const ahead = ctx.currentTime + 0.15;
+  for (;;) {
+    const t = preview.t0 + preview.nextK * preview.beat; if (t > ahead) break;
+    if (S.rhythm.prevClick !== false && t >= ctx.currentTime - 0.01) click(ctx, t, beatLevel(preview.nextK), clickGain, 'click');
+    preview.nextK++;
+  }
+}
+function stopPreview() {
+  if (!preview) return;
+  try { preview.src.stop(); } catch (e) {} preview.gain.disconnect(); clearInterval(preview.timer); preview = null;
+  updPreviewBtn(); if ($('rwOver')) { drawOverview(); drawDetail(); }
+}
+function updPreviewBtn() {
+  const b = $('rwPlay'); if (!b) return;
+  b.innerHTML = preview ? `<span style="display:inline-flex;gap:8px;align-items:center">${IC.stop} Stop listening</span>` : `<span style="display:inline-flex;gap:8px;align-items:center">${IC.play} Listen to the selected bars</span>`;
+}
+function rChanged() { restartRhythm(); renderRhythm(); markDirty(); updRhythmSheet(); if (preview) startPreview(); }
+function fmtT(t) { const m = Math.floor(t / 60), s = t - m * 60; return m ? `${m}:${s.toFixed(1).padStart(4, '0')}` : `${s.toFixed(2)} s`; }
+function updRhythmSheet() {
+  if (sheetKind !== 'rhythm' || !$('rwOver')) return;
+  const r = S.rhythm, { ls, le, rate } = rhythmLoop();
+  $('rwStart').textContent = r.startBar + 1; $('rwLen').textContent = r.loopBars;
+  $('rwDur').textContent = fmtT(rDur()) + ' · ' + rMaxBars() + ' bars';
+  $('rwInfo').textContent = `Looping bars ${r.startBar + 1}–${r.startBar + r.loopBars}: ${fmtT(ls)} to ${fmtT(le)}`;
+  $('rwRate').textContent = `At ${S.bpm} BPM the file plays at ${rate.toFixed(2)}× speed (change it with the BPM in the top bar). The pitch moves with the speed in this version.`;
+  const fb = $('shFbpm'); if (fb && document.activeElement !== fb) fb.value = r.fileBpm;
+  updPreviewBtn(); drawOverview(); drawDetail();
+}
+function canvasSetup(cv) {
+  if (!cv.dataset.h) cv.dataset.h = cv.getAttribute('height');   // logical height; the attribute gets scaled below
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth || 320, h = +cv.dataset.h;
+  cv.style.height = h + 'px';
+  if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+  return { g, w, h, col };
+}
+function rPlayhead() {
+  if (preview) { const { ls, le, rate } = rhythmLoop(), now = ctx.currentTime - (ctx.outputLatency || 0); return now < preview.t0 ? ls : ls + mod((now - preview.t0) * rate, le - ls); }
+  if (!S.playing || S.rhythm.source !== 'file' || !ctx) return null;
+  const { ls, le, rate } = rhythmLoop(), now = ctx.currentTime - (ctx.outputLatency || 0);
+  if (now < S.origin) return null;
+  return ls + mod((now - S.origin) * rate, le - ls);
+}
+let rDrag = null;
+function drawOverview() {
+  const cv = $('rwOver'); if (!cv || !rPeaks) return;
+  const { g, w, h, col } = canvasSetup(cv), dur = rDur(), X = t => t / dur * w;
+  const { ls, le } = rDrag ? rDrag.view : rhythmLoop(), { beatF, barF, off } = rGrid();
+  const top = 16, mid = top + (h - top) / 2, amp = (h - top) / 2 - 3;
+  g.fillStyle = col('--amber-bg'); g.fillRect(X(ls), top, X(le) - X(ls), h - top);
+  for (let x = 0; x < w; x++) {
+    const a = Math.floor(x / w * rPeaks.length), b = Math.max(a + 1, Math.floor((x + 1) / w * rPeaks.length));
+    let m = 0; for (let k = a; k < b; k++) if (rPeaks[k] > m) m = rPeaks[k];
+    const t = (x + 0.5) / w * dur; g.fillStyle = (t >= ls && t < le) ? col('--amber') : col('--muted');
+    g.globalAlpha = (t >= ls && t < le) ? 1 : 0.55; g.fillRect(x, mid - m * amp, 1, Math.max(1, 2 * m * amp));
+  }
+  g.globalAlpha = 1;
+  const pxBar = barF / dur * w; let every = 1; while (pxBar * every < 5) every *= 2; let lab = 1; while (pxBar * lab < 30) lab *= 2;
+  g.font = '10px ' + col('--body'); g.textBaseline = 'top';
+  for (let k = 0; off + k * barF < dur; k++) {
+    if (k % every) continue;
+    const x = Math.round(X(off + k * barF)) + 0.5;
+    g.strokeStyle = col('--line'); g.globalAlpha = k % lab === 0 ? 1 : 0.6; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x, k % lab === 0 ? top - 3 : top + 6); g.lineTo(x, h); g.stroke();
+    if (k % lab === 0) { g.globalAlpha = 1; g.fillStyle = col('--muted'); g.fillText(String(k + 1), x + 2, 1); }
+  }
+  if (pxBar / S.num > 7) {
+    g.strokeStyle = col('--line'); g.globalAlpha = 0.5;
+    for (let t = off; t < dur; t += beatF) { const x = Math.round(X(t)) + 0.5; g.beginPath(); g.moveTo(x, h - 6); g.lineTo(x, h); g.stroke(); }
+  }
+  g.globalAlpha = 1;
+  for (const t of [ls, le]) {   // handles
+    const x = X(t); g.fillStyle = col('--amber'); g.fillRect(x - 1, top, 2, h - top);
+    g.fillRect(x - 5, mid - 12, 10, 24);
+    g.fillStyle = col('--bg'); g.fillRect(x - 2, mid - 6, 1, 12); g.fillRect(x + 1, mid - 6, 1, 12);
+  }
+  const ph = rPlayhead(); if (ph != null) { g.fillStyle = col('--fg'); g.fillRect(X(ph) - 1, top, 2, h - top); }
+}
+let rDetailWin = null;
+function drawDetail() {
+  const cv = $('rwDetail'); if (!cv || !rhythmRaw) return;
+  const { g, w, h, col } = canvasSetup(cv), { ls } = rDrag ? rDrag.view : rhythmLoop(), { beatF, barF, off } = rGrid();
+  const t0 = Math.max(0, ls - beatF), t1 = Math.min(rDur(), ls + 3 * beatF); rDetailWin = { t0, t1, w };
+  const d = rhythmRaw.ch[0], sr = rhythmRaw.sr, X = t => (t - t0) / (t1 - t0) * w, mid = h / 2;
+  let mx = 1e-4; const cols = [];
+  for (let x = 0; x < w; x++) {
+    const a = Math.floor((t0 + x / w * (t1 - t0)) * sr), b = Math.floor((t0 + (x + 1) / w * (t1 - t0)) * sr);
+    let lo = 0, hi = 0; for (let i = a; i < b; i++) { const v = d[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+    cols.push([lo, hi]); mx = Math.max(mx, -lo, hi);
+  }
+  g.fillStyle = col('--muted');
+  cols.forEach(([lo, hi], x) => g.fillRect(x, mid - hi / mx * (mid - 4), 1, Math.max(1, (hi - lo) / mx * (mid - 4))));
+  g.font = '10px ' + col('--body'); g.textBaseline = 'top';
+  const k0 = Math.ceil((t0 - off) / beatF);
+  for (let k = k0; off + k * beatF <= t1; k++) {
+    const t = off + k * beatF, x = Math.round(X(t)) + 0.5, isBar = mod(k, S.num) === 0;
+    g.strokeStyle = col('--line'); g.lineWidth = isBar ? 2 : 1; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
+    g.fillStyle = col('--muted'); g.fillText(String(mod(k, S.num) + 1), x + 3, 2);
+  }
+  g.fillStyle = col('--amber'); g.fillRect(X(ls) - 1, 0, 3, h);
+  const ph = rPlayhead(); if (ph != null && ph >= t0 && ph <= t1) { g.fillStyle = col('--fg'); g.fillRect(X(ph) - 1, 0, 2, h); }
+}
+function bindWaveEditor() {
+  const ov = $('rwOver'), de = $('rwDetail');
+  const tAt = (cv, e) => { const rc = cv.getBoundingClientRect(); return clamp((e.clientX - rc.left) / rc.width, 0, 1); };
+  ov.addEventListener('pointerdown', e => {
+    const r = S.rhythm, { barF, off } = rGrid(), dur = rDur(), { ls, le } = rhythmLoop();
+    const t = tAt(ov, e) * dur, px = ov.getBoundingClientRect().width, tol = 18 / px * dur;
+    const bar = Math.floor((t - off) / barF);
+    let mode;
+    if (Math.abs(t - ls) < tol && Math.abs(t - ls) <= Math.abs(t - le)) mode = 'start';
+    else if (Math.abs(t - le) < tol) mode = 'end';
+    else if (t > ls && t < le) mode = 'move';
+    else { r.startBar = bar; rClamp(); mode = 'move'; }
+    rDrag = { mode, grab: bar - r.startBar, sb: r.startBar, lb: r.loopBars, view: rhythmLoop() };
+    ov.setPointerCapture(e.pointerId); e.preventDefault();
+    drawOverview(); drawDetail();
+  });
+  ov.addEventListener('pointermove', e => {
+    if (!rDrag) return;
+    const r = S.rhythm, { barF, off } = rGrid(), t = tAt(ov, e) * rDur(), max = rMaxBars();
+    if (rDrag.mode === 'move') { r.startBar = Math.floor((t - off) / barF) - rDrag.grab; }
+    else if (rDrag.mode === 'start') { const end = rDrag.sb + rDrag.lb, nb = clamp(Math.round((t - off) / barF), 0, end - 1); r.startBar = nb; r.loopBars = end - nb; }
+    else { r.loopBars = clamp(Math.round((t - off) / barF) - r.startBar, 1, max - r.startBar); }
+    rClamp(); rDrag.view = rhythmLoop();
+    $('rwStart').textContent = r.startBar + 1; $('rwLen').textContent = r.loopBars;
+    $('rwInfo').textContent = `Looping bars ${r.startBar + 1}–${r.startBar + r.loopBars}: ${fmtT(rDrag.view.ls)} to ${fmtT(rDrag.view.le)}`;
+    drawOverview(); drawDetail();
+  });
+  const end = () => { if (!rDrag) return; rDrag = null; rChanged(); };
+  ov.addEventListener('pointerup', end); ov.addEventListener('pointercancel', end);
+  de.addEventListener('click', e => {
+    if (!rDetailWin) return;
+    const t = rDetailWin.t0 + tAt(de, e) * (rDetailWin.t1 - rDetailWin.t0);
+    alignStartTo(snapOnset(t, 0.04)); rChanged();
+  });
+  updRhythmSheet();
+}
+
+/* ---------- score view ---------- */
+function melodyTracks() { return S.tracks.filter(t => t.melody); }
+function renderScoreList() {
+  const sel = $('scTrack'), cur = sel.value, ms = melodyTracks();
+  sel.innerHTML = ms.length ? ms.map(t => `<option value="${t.id}" ${String(t.id) === cur ? 'selected' : ''}>${esc(t.name)}${t.data ? '' : ' (empty)'}</option>`).join('') : '<option value="">No melody loops yet</option>';
+  if (!$('scKey').options.length) $('scKey').innerHTML = '<option value="auto">Detect from the notes</option>' + KEYS.map(([f, n]) => `<option value="${f}">${n}</option>`).join('');
+  const t = S.tracks.find(x => String(x.id) === sel.value);
+  $('scExport').disabled = !(t && t.notes);
+  if (t && t.notes) drawRoll(t); else { $('roll').hidden = true; $('scInfo').textContent = ''; }
+}
+function noteName(m, fifths) { const [s, a] = (fifths < 0 ? FLAT : SHARP)[m % 12]; return s + (a > 0 ? '#' : a < 0 ? 'b' : '') + (Math.floor(m / 12) - 1); }
+function currentFifths(t) { const v = $('scKey').value; return v === 'auto' ? guessKey(t.notes) : +v; }
+function drawRoll(t) {
+  const cv = $('roll'); cv.hidden = false;
+  const css = getComputedStyle(document.documentElement), fg = css.getPropertyValue('--fg'), mu = css.getPropertyValue('--muted'), ln = css.getPropertyValue('--line'), am = css.getPropertyValue('--amber');
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth || 320, h = 220;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const total = t.noteBars * S.num * 4 / S.den, qBeat = 4 / S.den;
+  const notes = t.notes, fifths = currentFifths(t);
+  const lo = notes.length ? Math.min(...notes.map(n => n.midi)) - 2 : 52, hi = notes.length ? Math.max(...notes.map(n => n.midi)) + 2 : 72;
+  const pad = 6, X = q => pad + q / total * (w - pad * 2), Y = m => h - 18 - (m - lo) / Math.max(1, hi - lo) * (h - 34);
+  for (let b = 0; b <= t.noteBars * S.num; b++) {
+    const x = X(b * qBeat); g.strokeStyle = ln; g.lineWidth = b % S.num === 0 ? 1.5 : 0.5; g.globalAlpha = b % S.num === 0 ? 1 : 0.6;
+    g.beginPath(); g.moveTo(x, 6); g.lineTo(x, h - 16); g.stroke();
+    if (b % S.num === 0 && b < t.noteBars * S.num) { g.globalAlpha = 1; g.fillStyle = mu; g.font = '11px sans-serif'; g.fillText(String(b / S.num + 1), x + 3, h - 4); }
+  }
+  g.globalAlpha = 1;
+  for (const n of notes) {
+    const x = X(n.qs), x2 = X(n.qe), y = Y(n.midi);
+    g.fillStyle = am; g.fillRect(x, y - 5, Math.max(3, x2 - x - 1), 10);
+    if (x2 - x > 22) { g.fillStyle = fg; g.font = '10px sans-serif'; g.fillText(noteName(n.midi, fifths), x + 2, y - 7); }
+  }
+  const kname = (KEYS.find(k => k[0] === fifths) || [0, ''])[1];
+  $('scInfo').textContent = notes.length
+    ? `${notes.length} notes, from ${noteName(lo + 2, fifths)} to ${noteName(hi - 2, fifths)}. Key: ${kname}${$('scKey').value === 'auto' ? ' (detected)' : ''}.`
+    : 'No clear notes found. Try a shorter minimum note length or record a louder take.';
+}
+function doTranscribe() {
+  ensureCtx();
+  const t = S.tracks.find(x => String(x.id) === $('scTrack').value);
+  if (!t) return toast('Mark a loop as melody in its ⋯ menu first.');
+  if (!t.data) return toast(t.name + ' has no audio yet.');
+  $('scRun').textContent = 'Transcribing…';
+  setTimeout(() => {
+    runTranscription(t, +$('scGrid').value, +$('scMin').value);
+    $('scRun').textContent = 'Transcribe loop';
+    renderScoreList();
+  }, 30);
+}
+function exportXml(all) {
+  ensureCtx();
+  let ts;
+  if (all) {
+    ts = melodyTracks().filter(t => t.data);
+    if (!ts.length) return toast('No melody loops with audio yet.');
+    ts.forEach(t => { if (!t.notes) runTranscription(t, +$('scGrid').value, +$('scMin').value); });
+  } else {
+    const t = S.tracks.find(x => String(x.id) === $('scTrack').value); if (!t || !t.notes) return; ts = [t];
+  }
+  const allNotes = ts.flatMap(t => t.notes);
+  const v = $('scKey').value, fifths = v === 'auto' ? guessKey(allNotes) : +v;
+  const xml = buildMusicXml(ts, fifths);
+  download(new Blob([xml], { type: 'application/vnd.recordare.musicxml+xml' }), `looper-${all ? 'melodies' : ts[0].name.replace(/\s+/g, '').toLowerCase()}-${stamp()}.musicxml`);
+}
+
+/* ---------- export view ---------- */
+function lcm(a, b) { const g = (x, y) => y ? g(y, x % y) : x; return a * b / g(a, b); }
+function renderExport() {
+  const ts = S.tracks.filter(t => t.data);
+  $('exChecks').innerHTML = `<label class="check"><input type="checkbox" data-ex="rhythm" ${S.rhythm.muted ? '' : 'checked'}> Rhythm</label>` +
+    S.tracks.map(t => `<label class="check"><input type="checkbox" data-ex="${t.id}" ${t.data && !t.muted ? 'checked' : ''} ${t.data ? '' : 'disabled'}> ${esc(t.name)}${t.data ? '' : ' (empty)'}</label>`).join('');
+  if (ctx && ts.length) {
+    const L = ts.map(trackBars).reduce(lcm, 1);
+    if (!$('exBars').dataset.touched) $('exBars').value = Math.min(64, L * 2);
+    $('exInfo').textContent = `All loops line up again every ${L} bar${L > 1 ? 's' : ''}. One bar is ${barSec().toFixed(2)} s.`;
+  } else $('exInfo').textContent = 'Record a loop to export it.';
+}
+function exportSel() {
+  const sel = { rhythm: false, tracks: [] };
+  $('exChecks').querySelectorAll('input').forEach(i => { if (!i.checked) return; if (i.dataset.ex === 'rhythm') sel.rhythm = true; else sel.tracks.push(+i.dataset.ex); });
+  return sel;
+}
+async function doExport(stems) {
+  ensureCtx();
+  const sel = exportSel(), bars = clamp(+$('exBars').value || 8, 1, 256), fade = $('exFade').checked;
+  if (!sel.rhythm && !sel.tracks.length) return toast('Select at least one track.');
+  toast('Rendering…', 8000);
+  try {
+    if (!stems) { download(wavBlob(await renderSources(sel, bars, fade), ctx.sampleRate), `looper-mix-${stamp()}.wav`); }
+    else {
+      if (sel.rhythm) download(wavBlob(await renderSources({ rhythm: true, tracks: [] }, bars, fade), ctx.sampleRate), `looper-rhythm-${stamp()}.wav`);
+      for (const id of sel.tracks) {
+        const t = S.tracks.find(x => x.id === id);
+        await new Promise(r => setTimeout(r, 400));
+        download(wavBlob(await renderSources({ rhythm: false, tracks: [id] }, bars, fade), ctx.sampleRate), `looper-${t.name.replace(/\s+/g, '').toLowerCase()}-${stamp()}.wav`);
+      }
+    }
+    toast('Saved to Downloads');
+  } catch (e) { toast('Export failed: ' + e.message); }
+}
+
+/* ---------- settings view ---------- */
+function renderSettings() {
+  $('micBtn').textContent = capNode ? 'Microphone on' : 'Enable microphone';
+  $('micBtn').classList.toggle('on', !!capNode);
+  $('latTxt').textContent = CFG.latencyMs + ' ms';
+  $('latRange').value = CFG.latencyMs;
+  $('latProfile').textContent = CFG.device ? 'for ' + CFG.device : '';
+  $('monChk').checked = !!CFG.monitor;
+  $('gainRange').value = CFG.inputGainDb;
+  $('gainTxt').textContent = (CFG.inputGainDb > 0 ? '+' : '') + CFG.inputGainDb + ' dB';
+  $('tuneSel').value = CFG.tuning;
+  if (ctx) {
+    const ol = Math.round(((ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * 1000);
+    $('outLat').innerHTML = `Output delay reported by the phone: ${ol} ms.` + (ol > 120 ? ' <span class="warn">That is high. Bluetooth headphones make overdubs land late; use wired headphones.</span>' : '');
+  }
+}
+
+/* ---------- events ---------- */
+$('playBtn').onclick = () => S.playing ? stop() : play();
+$('tempoBtn').onclick = () => openSheet('tempo');
+$('back').onclick = closeSheet;
+$('sheet').addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && !b.disabled) sheetAction(b.dataset.act); });
+$('fileIn').onchange = e => { const f = e.target.files[0]; if (f) loadRhythmFile(f); e.target.value = ''; };
+document.querySelector('main').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const id = +b.dataset.id, t = S.tracks.find(x => x.id === id), act = b.dataset.act;
+  if (act === 'rec') recTap(id);
+  else if (act === 'mute') { t.muted = !t.muted; applyGains(); renderTracks(); renderExport(); markDirty(); }
+  else if (act === 'tmenu') { ensureCtx(); openSheet('track', id); }
+  else if (act === 'undo') undoTrack(t);
+  else if (act === 'del') {
+    clearTimeout(delTimer);
+    if (delConfirm !== id) { delConfirm = id; renderTracks(); toast('Tap the bin again to delete ' + t.name, 3000); delTimer = setTimeout(() => { delConfirm = 0; renderTracks(); }, 3000); }
+    else { delConfirm = 0; clearTrack(t); toast(t.name + ' deleted'); }
+  }
+  else if (act === 'rmute') { S.rhythm.muted = !S.rhythm.muted; ensureCtx(); applyGains(); renderRhythm(); renderExport(); markDirty(); }
+  else if (act === 'rmenu') { ensureCtx(); openSheet('rhythm'); }
+});
+$('addTrack').onclick = () => { const t = newTrack(S.tracks.length + 1); t.melody = true; attachTrack(t); S.tracks.push(t); renderAll(); markDirty(); };
+$('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  $('tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  ['looper', 'score', 'export', 'settings'].forEach(v => $('v-' + v).hidden = v !== b.dataset.v);
+  if (b.dataset.v === 'score') renderScoreList();
+  if (b.dataset.v === 'export') renderExport();
+  if (b.dataset.v === 'settings') renderSettings();
+});
+$('scTrack').onchange = renderScoreList;
+$('scKey').onchange = () => { const t = S.tracks.find(x => String(x.id) === $('scTrack').value); if (t && t.notes) drawRoll(t); };
+$('scGrid').onchange = () => { const t = S.tracks.find(x => String(x.id) === $('scTrack').value); if (t && t.notes) doTranscribe(); };
+$('scMin').oninput = e => $('scMinTxt').textContent = e.target.value;
+$('scRun').onclick = doTranscribe;
+$('scExport').onclick = () => exportXml(false);
+$('scExportAll').onclick = () => exportXml(true);
+$('exBars').oninput = e => e.target.dataset.touched = '1';
+$('exMix').onclick = () => doExport(false);
+$('exStems').onclick = () => doExport(true);
+$('micBtn').onclick = () => ensureMic();
+$('inSel').onchange = async e => { CFG.inputId = e.target.value; saveCfg(); closeMic(); await ensureMic(); };
+$('gainRange').oninput = e => { CFG.inputGainDb = +e.target.value; saveCfg(); if (inGain) inGain.gain.setTargetAtTime(dbToLin(CFG.inputGainDb), ctx.currentTime, 0.02); renderSettings(); };
+$('monChk').onchange = e => { CFG.monitor = e.target.checked; saveCfg(); if (monGain) monGain.gain.value = CFG.monitor ? 1 : 0; };
+$('latRange').oninput = e => setLatency(+e.target.value);
+$('latMinus').onclick = () => setLatency(CFG.latencyMs - 1);
+$('latPlus').onclick = () => setLatency(CFG.latencyMs + 1);
+$('calBtn').onclick = calibrate;
+$('tuneSel').onchange = e => { CFG.tuning = e.target.value; saveCfg(); };
+let newConfirm = 0;
+$('newSess').onclick = () => {
+  if (!newConfirm) { newConfirm = 1; $('newSess').textContent = 'Tap again to delete all loops'; setTimeout(() => { newConfirm = 0; $('newSess').textContent = 'Start a new session'; }, 3000); return; }
+  newConfirm = 0; $('newSess').textContent = 'Start a new session'; newSession();
+};
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.playing && navigator.wakeLock) navigator.wakeLock.request('screen').then(w => wakeLock = w).catch(() => {}); });
+
+/* ---------- boot ---------- */
+loadSession().then(() => { renderAll(); requestAnimationFrame(loop); });
+</script>
+</body>
+</html>
