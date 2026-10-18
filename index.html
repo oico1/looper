@@ -158,7 +158,7 @@ canvas{width:100%;display:block;border-radius:10px;background:var(--panel2)}
     <section class="view" id="v-score" hidden>
       <div class="panel">
         <h2>Score</h2>
-        <p class="help">Only loops marked as melody are listed. Mark a loop in its ⋯ menu.</p>
+        <p class="help">Any loop can be transcribed. Single-note lines work best; chords won't transcribe well. "Export all melody loops" includes the loops marked as melody in their ⋯ menu.</p>
         <div class="field"><span class="lbl">Loop</span><select id="scTrack"></select></div>
         <div class="row">
           <div class="field grow"><span class="lbl">Grid</span>
@@ -187,7 +187,10 @@ canvas{width:100%;display:block;border-radius:10px;background:var(--panel2)}
           <label class="check grow"><input type="checkbox" id="exFade" checked> Fade out at the end</label>
         </div>
         <p class="help" id="exInfo"></p>
-        <button class="primary" id="exMix">Export mix (WAV)</button>
+        <div class="field"><span class="lbl">Format</span>
+          <div class="seg" id="exFmt"><button data-fmt="wav">WAV</button><button data-fmt="mp3">MP3</button></div>
+          <p class="help">WAV is full quality and larger. MP3 (192 kbps) is about 8 times smaller; the first MP3 export needs an internet connection to load the encoder.</p></div>
+        <button class="primary" id="exMix">Export mix</button>
         <button id="exStems">Export each track separately</button>
       </div>
     </section>
@@ -1269,6 +1272,23 @@ function loop() { uiTick(false); requestAnimationFrame(loop); }
 /* ---------- sheets ---------- */
 let rmFileArmed = false;
 let sheetKind = null, sheetId = null, confirmClear = 0;
+let saveCb = null;
+function askName(def, extLabel, title, cb) {
+  saveCb = cb; openSheet('save', null);
+  $('sheet').innerHTML = `<div class="hd"><h2>Save as</h2><button class="ghost" data-act="close" aria-label="Close">${IC.x}</button></div>
+    <p class="help" style="margin:0">${esc(title)}</p>
+    <form id="saveForm" class="field" novalidate><label class="lbl" for="saveName">File name</label>
+      <div class="row" style="flex-wrap:nowrap"><input id="saveName" class="grow" style="min-height:44px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:0 10px;min-width:0" value="${esc(def)}" autocomplete="off" spellcheck="false"><span class="help num" style="white-space:nowrap">${esc(extLabel)}</span></div>
+      <p class="help" id="saveErr" style="color:var(--red);margin:0" hidden>Type a file name.</p>
+      <div class="row" style="margin-top:8px"><button type="button" class="grow" data-act="close">Cancel</button><button type="submit" class="primary grow">Save</button></div></form>`;
+  const inp = $('saveName'); setTimeout(() => { inp.focus(); inp.select(); }, 50);
+  inp.oninput = () => $('saveErr').hidden = true;
+  $('saveForm').onsubmit = e => {
+    e.preventDefault();
+    const n = cleanName(inp.value); if (!n) { $('saveErr').hidden = false; return; }
+    const f = saveCb; saveCb = null; closeSheet(); f(n);
+  };
+}
 function closeSheet() { stopPreview(); $('sheet').hidden = true; $('back').hidden = true; sheetKind = null; }
 function openSheet(kind, id) {
   sheetKind = kind; sheetId = id;
@@ -1568,8 +1588,8 @@ function bindWaveEditor() {
 /* ---------- score view ---------- */
 function melodyTracks() { return S.tracks.filter(t => t.melody); }
 function renderScoreList() {
-  const sel = $('scTrack'), cur = sel.value, ms = melodyTracks();
-  sel.innerHTML = ms.length ? ms.map(t => `<option value="${t.id}" ${String(t.id) === cur ? 'selected' : ''}>${esc(t.name)}${t.data ? '' : ' (empty)'}</option>`).join('') : '<option value="">No melody loops yet</option>';
+  const sel = $('scTrack'), cur = sel.value, ms = S.tracks;
+  sel.innerHTML = ms.map(t => `<option value="${t.id}" ${String(t.id) === cur ? 'selected' : ''}>${esc(t.name)}${t.data ? '' : ' (empty)'}${t.melody ? '' : ' · not marked as melody'}</option>`).join('');
   if (!$('scKey').options.length) $('scKey').innerHTML = '<option value="auto">Detect from the notes</option>' + KEYS.map(([f, n]) => `<option value="${f}">${n}</option>`).join('');
   const t = S.tracks.find(x => String(x.id) === sel.value);
   $('scExport').disabled = !(t && t.notes);
@@ -1606,7 +1626,7 @@ function drawRoll(t) {
 function doTranscribe() {
   ensureCtx();
   const t = S.tracks.find(x => String(x.id) === $('scTrack').value);
-  if (!t) return toast('Mark a loop as melody in its ⋯ menu first.');
+  if (!t) return toast('Choose a loop first.');
   if (!t.data) return toast(t.name + ' has no audio yet.');
   $('scRun').textContent = 'Transcribing…';
   setTimeout(() => {
@@ -1628,12 +1648,15 @@ function exportXml(all) {
   const allNotes = ts.flatMap(t => t.notes);
   const v = $('scKey').value, fifths = v === 'auto' ? guessKey(allNotes) : +v;
   const xml = buildMusicXml(ts, fifths);
-  download(new Blob([xml], { type: 'application/vnd.recordare.musicxml+xml' }), `looper-${all ? 'melodies' : ts[0].name.replace(/\s+/g, '').toLowerCase()}-${stamp()}.musicxml`);
+  askName(`looper-${all ? 'melodies' : slug(ts[0].name)}-${stamp()}`, '.musicxml', 'Score for MuseScore',
+    name => download(new Blob([xml], { type: 'application/vnd.recordare.musicxml+xml' }), name + '.musicxml'));
 }
 
 /* ---------- export view ---------- */
 function lcm(a, b) { const g = (x, y) => y ? g(y, x % y) : x; return a * b / g(a, b); }
 function renderExport() {
+  $('exFmt').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.fmt === (CFG.audioFmt === 'mp3' ? 'mp3' : 'wav')));
+  $('exMix').textContent = 'Export mix (' + (CFG.audioFmt === 'mp3' ? 'MP3' : 'WAV') + ')';
   const ts = S.tracks.filter(t => t.data);
   $('exChecks').innerHTML = `<label class="check"><input type="checkbox" data-ex="rhythm" ${S.rhythm.muted ? '' : 'checked'}> Rhythm</label>` +
     S.tracks.map(t => `<label class="check"><input type="checkbox" data-ex="${t.id}" ${t.data && !t.muted ? 'checked' : ''} ${t.data ? '' : 'disabled'}> ${esc(t.name)}${t.data ? '' : ' (empty)'}</label>`).join('');
@@ -1652,19 +1675,51 @@ async function doExport(stems) {
   ensureCtx();
   const sel = exportSel(), bars = clamp(+$('exBars').value || 8, 1, 256), fade = $('exFade').checked;
   if (!sel.rhythm && !sel.tracks.length) return toast('Select at least one track.');
-  toast('Rendering…', 8000);
-  try {
-    if (!stems) { download(wavBlob(await renderSources(sel, bars, fade), ctx.sampleRate), `looper-mix-${stamp()}.wav`); }
-    else {
-      if (sel.rhythm) download(wavBlob(await renderSources({ rhythm: true, tracks: [] }, bars, fade), ctx.sampleRate), `looper-rhythm-${stamp()}.wav`);
-      for (const id of sel.tracks) {
-        const t = S.tracks.find(x => x.id === id);
-        await new Promise(r => setTimeout(r, 400));
-        download(wavBlob(await renderSources({ rhythm: false, tracks: [id] }, bars, fade), ctx.sampleRate), `looper-${t.name.replace(/\s+/g, '').toLowerCase()}-${stamp()}.wav`);
+  const fmt = CFG.audioFmt === 'mp3' ? 'mp3' : 'wav', ext = '.' + fmt;
+  askName(`looper-${stems ? 'tracks' : 'mix'}-${stamp()}`, stems ? `-<track>${ext}` : ext, stems ? 'Tracks (the name is used as a prefix)' : 'Audio mix', async name => {
+    toast('Rendering…', 15000);
+    try {
+      const enc = async d => fmt === 'mp3' ? await mp3Blob(d, ctx.sampleRate) : wavBlob(d, ctx.sampleRate);
+      if (!stems) download(await enc(await renderSources(sel, bars, fade)), name + ext);
+      else {
+        if (sel.rhythm) download(await enc(await renderSources({ rhythm: true, tracks: [] }, bars, fade)), `${name}-rhythm${ext}`);
+        for (const id of sel.tracks) {
+          const t = S.tracks.find(x => x.id === id);
+          await new Promise(r => setTimeout(r, 400));
+          download(await enc(await renderSources({ rhythm: false, tracks: [id] }, bars, fade)), `${name}-${slug(t.name)}${ext}`);
+        }
       }
-    }
-    toast('Saved to Downloads');
-  } catch (e) { toast('Export failed: ' + e.message); }
+      toast('Saved to Downloads');
+    } catch (e) { toast('Export failed: ' + e.message, 5000); }
+  });
+}
+const slug = n => n.replace(/\s+/g, '').toLowerCase();
+function cleanName(n) { return n.replace(/\.(musicxml|mxl|xml|wav|mp3)$/i, '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 120); }
+// MP3 via lamejs (loaded on first use), encoded in slices so the screen stays responsive.
+let lameP = null;
+function loadLame() {
+  if (window.lamejs) return Promise.resolve();
+  if (!lameP) lameP = new Promise((res, rej) => {
+    const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js';
+    sc.onload = () => window.lamejs ? res() : rej(new Error('MP3 encoder failed to start'));
+    sc.onerror = () => { lameP = null; rej(new Error("couldn't load the MP3 encoder. Check the internet connection or use WAV")); };
+    document.head.appendChild(sc);
+  });
+  return lameP;
+}
+async function mp3Blob(d, sr) {
+  await loadLame();
+  const rate = [48000, 44100, 32000].includes(sr) ? sr : 44100;
+  if (rate !== sr) d = resample(d, sr, rate);
+  const enc = new lamejs.Mp3Encoder(1, rate, 192), parts = [], BL = 1152, pcm = new Int16Array(BL);
+  for (let i = 0; i < d.length; i += BL) {
+    const n = Math.min(BL, d.length - i), blk = n === BL ? pcm : new Int16Array(n);
+    for (let k = 0; k < n; k++) blk[k] = clamp(d[i + k], -1, 1) * 32767;
+    const out = enc.encodeBuffer(blk); if (out.length) parts.push(new Uint8Array(out));
+    if ((i / BL) % 400 === 399) await new Promise(r => setTimeout(r, 0));
+  }
+  const end = enc.flush(); if (end.length) parts.push(new Uint8Array(end));
+  return new Blob(parts, { type: 'audio/mpeg' });
 }
 
 /* ---------- settings view ---------- */
@@ -1723,6 +1778,7 @@ $('scRun').onclick = doTranscribe;
 $('scExport').onclick = () => exportXml(false);
 $('scExportAll').onclick = () => exportXml(true);
 $('exBars').oninput = e => e.target.dataset.touched = '1';
+$('exFmt').onclick = e => { const b = e.target.closest('button'); if (!b) return; CFG.audioFmt = b.dataset.fmt; saveCfg(); renderExport(); };
 $('exMix').onclick = () => doExport(false);
 $('exStems').onclick = () => doExport(true);
 $('micBtn').onclick = () => ensureMic();
