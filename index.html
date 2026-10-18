@@ -211,7 +211,8 @@ canvas{width:100%;display:block;border-radius:10px;background:var(--panel2)}
           <div class="seg" id="outSeg"><button data-out="wired">Speaker or wired</button><button data-out="bt">Bluetooth</button></div>
           <p class="help">Each keeps its own latency, so you can switch without recalibrating.</p></div>
         <input type="range" id="latRange" min="0" max="800" step="1" value="0" aria-label="Latency in milliseconds">
-        <div class="row"><button id="latMinus" class="grow">−5 ms</button><button id="latPlus" class="grow">+5 ms</button></div>
+        <div class="row" style="gap:6px"><button class="grow" data-lat="-20">−20</button><button class="grow" data-lat="-5">−5</button><button class="grow" data-lat="5">+5</button><button class="grow" data-lat="20">+20</button></div>
+        <p class="help" id="latLive">Fine-tune by ear: press play so your loops sound, then change the value here. Loops recorded on this output move straight away. If they sound late, raise the value; if they sound early, lower it.</p>
         <button class="primary" id="playCalBtn">Calibrate by playing along</button>
         <p class="help">Works with any headphones, including Bluetooth. Put them on and you'll hear 4 count-in clicks, then 8 more: strum muted strings (or clap) right on each of those 8 clicks, the way you'd play in time. The app measures how late your strums reach it, which is exactly the delay it needs to correct.</p>
         <button id="calBtn">Auto-calibrate with the speaker</button>
@@ -391,6 +392,28 @@ function sched() {
     nextBeat++;
   }
 }
+/* Latency correction after recording: each loop remembers the latency it was captured with
+   (recLat) and on which output (recOut). While the same output is selected, the loop plays
+   shifted by (current latency - recLat), so changing the value re-aligns every loop live. */
+const outKey = () => CFG.outMode === 'bt' ? 'bt' : 'wired';
+function shiftSamples(t, lat) {
+  if (!t.data || t.recLat == null || t.recOut !== outKey()) return 0;
+  return Math.round(((lat == null ? CFG.latencyMs : lat) - t.recLat) / 1000 * srOf(t));
+}
+function rotated(data, k) {   // out[i] = data[i + k] (wrapping): k > 0 plays the audio earlier
+  const n = data.length; k = mod(k, n); if (!k) return data;
+  const out = new Float32Array(n); out.set(data.subarray(k)); out.set(data.subarray(0, k), n - k); return out;
+}
+const effData = t => rotated(t.data, shiftSamples(t));
+let resyncT = 0;
+function resyncTracks() {
+  clearTimeout(resyncT);
+  resyncT = setTimeout(() => {
+    if (!ctx || !S.playing) return;
+    const T = ctx.currentTime + 0.04;
+    S.tracks.forEach(t => { if (t.data && !(rec && rec.tr === t)) startTrackSource(t, T); });
+  }, 60);
+}
 function startTrackSource(t, when) {
   if (!ctx || !t.data) return;
   attachTrack(t);
@@ -399,7 +422,7 @@ function startTrackSource(t, when) {
   const s = ctx.createBufferSource(); s.buffer = ab; s.loop = true; s.connect(t.gain);
   const len = t.data.length / ctx.sampleRate;
   const st = Math.max(when, S.origin);
-  s.start(st, mod(st - (S.origin + t.anchor * barSec()), len));
+  s.start(st, mod(st - (S.origin + t.anchor * barSec()) + shiftSamples(t) / ctx.sampleRate, len));
   t.src = s;
 }
 function stopTrackSource(t) { if (t.src) { try { t.src.stop(); } catch (e) {} t.src = null; } }
@@ -602,7 +625,7 @@ function takeLength(tr) {
 function beginTake(tr, start) {
   const sr = ctx.sampleRate, lat = CFG.latencyMs / 1000, len = takeLength(tr);
   const overdub = !!(tr.data && tr.mode === 'overdub');
-  rec = { tr, start, end: start + len / sr, len, overdub, next: null, nextStart: 0 };
+  rec = { tr, start, end: start + len / sr, len, overdub, next: null, nextStart: 0, lat: CFG.latencyMs };
   if (S.chain) {
     const nx = nextEmptyAfter(tr);
     if (nx) {
@@ -667,17 +690,17 @@ function finishTake(r, buf) {
   if (rec !== r) return;
   const tr = r.tr, sr = ctx.sampleRate;
   if (r.overdub && tr.data && tr.data.length === r.len) {
-    tr.undo.push({ data: tr.data, anchor: tr.anchor }); if (tr.undo.length > 6) tr.undo.shift();
+    tr.undo.push({ data: tr.data, anchor: tr.anchor, recLat: tr.recLat, recOut: tr.recOut }); if (tr.undo.length > 6) tr.undo.shift();
     const off = mod(Math.round((r.start - (S.origin + tr.anchor * barSec())) * sr), r.len);
-    const nd = tr.data.slice();
+    const nd = rotated(tr.data, shiftSamples(tr, r.lat)).slice();   // bake the old layers' correction, then add the new one
     for (let i = 0; i < r.len; i++) nd[(i + off) % r.len] += buf[i];
     tr.data = nd;
   } else {
-    if (tr.data) { tr.undo.push({ data: tr.data, anchor: tr.anchor }); if (tr.undo.length > 6) tr.undo.shift(); }
+    if (tr.data) { tr.undo.push({ data: tr.data, anchor: tr.anchor, recLat: tr.recLat, recOut: tr.recOut }); if (tr.undo.length > 6) tr.undo.shift(); }
     tr.data = buf;
     tr.anchor = Math.round((r.start - S.origin) / barSec());
   }
-  tr.sr = sr; tr.notes = null; tr.lastTake = Date.now(); tr.lastAct = 'take';
+  tr.sr = sr; tr.notes = null; tr.lastTake = Date.now(); tr.lastAct = 'take'; tr.recLat = r.lat; tr.recOut = outKey();
   if (S.playing) {
     // Hand over from the head preview (if any) to the full loop at the same position, no gap.
     const T = ctx.currentTime + 0.06;
@@ -691,14 +714,14 @@ function finishTake(r, buf) {
 }
 function undoTrack(tr) {
   if (!tr.undo.length) return;
-  const u = tr.undo.pop(); tr.data = u.data; tr.anchor = u.anchor;
+  const u = tr.undo.pop(); tr.data = u.data; tr.anchor = u.anchor; tr.recLat = u.recLat; tr.recOut = u.recOut;
   tr.notes = null;
   if (S.playing) startTrackSource(tr, ctx.currentTime + 0.03);
   toast(tr.lastAct === 'delete' ? 'Loop restored' : 'Last take undone'); tr.lastAct = 'take'; renderAll(); markDirty();
 }
 function clearTrack(tr) {
   if (rec && rec.tr === tr) { captures.delete(rec.cap); if (rec.head) try { rec.head.stop(); } catch (e) {} rec = null; }
-  if (tr.data) { tr.undo.push({ data: tr.data, anchor: tr.anchor }); if (tr.undo.length > 6) tr.undo.shift(); tr.lastTake = Date.now(); tr.lastAct = 'delete'; setTimeout(renderTracks, 8200); }
+  if (tr.data) { tr.undo.push({ data: tr.data, anchor: tr.anchor, recLat: tr.recLat, recOut: tr.recOut }); if (tr.undo.length > 6) tr.undo.shift(); tr.lastTake = Date.now(); tr.lastAct = 'delete'; setTimeout(renderTracks, 8200); }
   stopTrackSource(tr); tr.data = null; tr.notes = null; tr.solo = false;
   applyGains(); renderAll(); markDirty();
 }
@@ -805,12 +828,12 @@ const profKey = () => (CFG.device || 'Default input') + (CFG.outMode === 'bt' ? 
 function setLatency(ms) {
   CFG.latencyMs = clamp(Math.round(ms), 0, 1000);
   CFG.profiles[profKey()] = CFG.latencyMs;
-  saveCfg(); renderSettings();
+  saveCfg(); renderSettings(); resyncTracks(); S.tracks.forEach(t => t.notes = null);
 }
 function setOutMode(m) {
   CFG.outMode = m; const v = CFG.profiles[profKey()];
   if (v != null) CFG.latencyMs = v;
-  saveCfg(); renderSettings();
+  saveCfg(); renderSettings(); resyncTracks();
   if (v == null) $('calInfo').textContent = m === 'bt' ? 'No Bluetooth calibration yet. Put the headphones on and use "Calibrate by playing along".' : '';
 }
 // Play-along calibration: clicks at 60 BPM through whatever the phone outputs to; the player
@@ -966,7 +989,7 @@ function guessKey(notes) {
   return best;
 }
 function runTranscription(tr, unit, minMs) {
-  const raw = detectNotes(tr.data, ctx.sampleRate, minMs);
+  const raw = detectNotes(effData(tr), ctx.sampleRate, minMs);
   const bars = trackBars(tr);
   tr.notes = quantize(raw, bars, unit); tr.noteBars = bars; tr.noteUnit = unit;
   return tr.notes;
@@ -1068,7 +1091,7 @@ async function renderSources(sel, bars, fade) {
     const g = oc.createGain(); g.gain.value = t.vol; g.connect(out);
     const ab = oc.createBuffer(1, t.data.length, sr); ab.copyToChannel(t.data, 0);
     const s = oc.createBufferSource(); s.buffer = ab; s.loop = true; s.connect(g);
-    s.start(0, mod(-t.anchor * barSec(), t.data.length / sr));
+    s.start(0, mod(-t.anchor * barSec() + shiftSamples(t) / sr, t.data.length / sr));
   }
   if (fade && dur > 4) { out.gain.setValueAtTime(1, dur - 3); out.gain.linearRampToValueAtTime(0, dur); }
   const res = await oc.startRendering();
@@ -1109,7 +1132,7 @@ async function saveSession() {
     const data = {
       v: 2, bpm: S.bpm, num: S.num, den: S.den, countIn: S.countIn, chain: S.chain,
       rhythm: Object.assign({}, S.rhythm), rhythmRaw,
-      tracks: S.tracks.map(t => ({ name: t.name, bars: t.bars, data: t.data, sr: t.sr || (ctx && ctx.sampleRate), anchor: t.anchor, muted: t.muted, vol: t.vol, melody: t.melody, mode: t.mode }))
+      tracks: S.tracks.map(t => ({ name: t.name, bars: t.bars, data: t.data, sr: t.sr || (ctx && ctx.sampleRate), anchor: t.anchor, muted: t.muted, vol: t.vol, melody: t.melody, mode: t.mode, recLat: t.recLat, recOut: t.recOut }))
     };
     db.transaction('s', 'readwrite').objectStore('s').put(data, 'current');
   } catch (e) {}
@@ -1125,6 +1148,7 @@ async function loadSession() {
     if (rhythmRaw) { buildPeaks(); if (S.rhythm.loopBars == null) { S.rhythm.startBar = 0; S.rhythm.loopBars = 9999; } }
     if (!rhythmRaw && S.rhythm.source === 'file') S.rhythm.source = 'metro';
     S.tracks = data.tracks.map((d, i) => Object.assign(newTrack(i + 1), d, { undo: [] }));
+    S.tracks.forEach(t => { if (t.data && t.recLat == null) { t.recLat = CFG.latencyMs; t.recOut = outKey(); } });
   } catch (e) {}
 }
 async function newSession() {
@@ -1706,8 +1730,7 @@ $('inSel').onchange = async e => { CFG.inputId = e.target.value; saveCfg(); clos
 $('gainRange').oninput = e => { CFG.inputGainDb = +e.target.value; saveCfg(); if (inGain) inGain.gain.setTargetAtTime(dbToLin(CFG.inputGainDb), ctx.currentTime, 0.02); renderSettings(); };
 $('monChk').onchange = e => { CFG.monitor = e.target.checked; saveCfg(); if (monGain) monGain.gain.value = CFG.monitor ? 1 : 0; };
 $('latRange').oninput = e => setLatency(+e.target.value);
-$('latMinus').onclick = () => setLatency(CFG.latencyMs - 5);
-$('latPlus').onclick = () => setLatency(CFG.latencyMs + 5);
+document.querySelectorAll('[data-lat]').forEach(b => b.onclick = () => setLatency(CFG.latencyMs + +b.dataset.lat));
 $('calBtn').onclick = calibrate;
 $('playCalBtn').onclick = calibratePlayAlong;
 $('outSeg').onclick = e => { const b = e.target.closest('button'); if (b) setOutMode(b.dataset.out); };
